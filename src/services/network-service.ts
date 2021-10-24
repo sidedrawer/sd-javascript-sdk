@@ -1,5 +1,7 @@
 import config from '../config.json';
 import axios from 'axios';
+import { Auth0Client } from '@auth0/auth0-spa-js';
+
 
 const instance = axios.create({
     baseURL: config.apiNetwork
@@ -14,7 +16,7 @@ export const getShared = async () => {
     return instance.get(`sidedrawer/shared`);
 };
 
-export const getOwned = async () => {
-    return instance.get(`sidedrawer/owned`);
-};
+export const getOwned = async (token: any) => {
 
+    return instance.get(`sidedrawer/owned`, { headers: { authorization: `Bearer ${token}` } });
+};
