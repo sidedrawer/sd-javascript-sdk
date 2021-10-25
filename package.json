@@ -2,7 +2,7 @@
     "name": "sidedrawer-javascript-sdk",
     "author": "Juan Matias Doder",
     "description": "This is a sdk of SideDrawer to help to build development quickly.",
-    "version": "0.1.17",
+    "version": "0.1.18",
     "license": "MIT",
     "main": "dist/index.js",
     "typings": "dist/index.d.ts",
