@@ -17,6 +17,7 @@ export const getShared = async () => {
 };
 
 export const getOwned = async (token: string) => {
-
-    return instance.get(`sidedrawer/owned`, { headers: { authorization: `Bearer ${token}` } });
+    console.log(`Bearer nuevo ${token}`);
+    instance.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    return instance.get(`sidedrawer/owned`);
 };
