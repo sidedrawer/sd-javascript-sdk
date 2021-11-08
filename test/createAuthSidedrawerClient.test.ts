@@ -1,7 +1,9 @@
-//import { createAuthSidedrawerClient } from '../src';
+//import { authClient } from '../src';
 
 describe('createAuthSidedrawerClient', () => {
     it('works', () => {
+
+        //authClient.
         //expect(createAuthSidedrawerClient("clientId")).toEqual;
     });
 });
