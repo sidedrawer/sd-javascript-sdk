@@ -1,35 +1,31 @@
 import config from '../config.json';
-import axios from 'axios';
-import { auth } from './auth-service';
+import BaseService from './base-service';
+import { AxiosResponse } from 'axios';
 
-const instance = axios.create({
-    baseURL: config.apiRecord
-});
+
 export interface IRecordService {
 
-    getBySidedrawer(sidedrawer_id: string): Promise<any>;
-    getUserSetting(user_id: string): Promise<any>;
+    getBySidedrawer(sidedrawer_id: string): Promise<AxiosResponse<any>>;
+    getUserSetting(user_id: string): Promise<AxiosResponse<any>>;
 
 }
-export default class RecordService implements IRecordService {
+export default class RecordService extends BaseService implements IRecordService {
+    constructor() {
+        super(config.apiRecord);
+    }
 
-    getBySidedrawer = async (sidedrawer_id: string) => {
-        await setToken();
-        return instance.get(`sidedrawer/sidedrawer-id/${sidedrawer_id}/records`);
+    getBySidedrawer = async (sidedrawer_id: string): Promise<AxiosResponse<any>> => {
+        return this.get(`sidedrawer/sidedrawer-id/${sidedrawer_id}/records`);
+
     };
 
-    getUserSetting = async (user_id: string) => {
-        await setToken();
-        return instance.get(`/accounts/account-id/${user_id}/settings`);
+    getUserSetting = async (user_id: string): Promise<AxiosResponse<any>> => {
+
+        return this.get(`/accounts/account-id/${user_id}/settings`);
+
     };
 
 }
 
-const setToken = async () => {
-    if (!auth)
-        throw new Error('The  Auth Client have not been initialized');
-
-    instance.defaults.headers.common['Authorization'] = `Bearer ${await auth.getTokenSilently()}`;
-};
 
 

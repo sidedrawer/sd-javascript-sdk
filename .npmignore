@@ -1,0 +1,7 @@
+
+dist/services/
+# dist/index.d.ts
+# dist/sidedrawer-javascript-sdk.cjs.development.js
+# dist/sidedrawer-javascript-sdk.cjs.development.js.map
+# dist/sidedrawer-javascript-sdk.esm.js
+# dist/sidedrawer-javascript-sdk.esm.js.map

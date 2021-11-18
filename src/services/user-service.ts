@@ -1,36 +1,26 @@
 import config from '../config.json';
-import axios from 'axios';
-import { auth } from './auth-service';
-
-const instance = axios.create({
-    baseURL: config.apiUser
-});
+import BaseService from './base-service';
+import { AxiosResponse } from 'axios';
 
 export interface IUserSevice {
 
-    getUserBy(auth: string): Promise<any>;
-    getSetting(user_id: string): Promise<any>;
+    getUserBy(auth: string): Promise<AxiosResponse<any>>;
+    getSetting(user_id: string): Promise<AxiosResponse<any>>;
 
 }
 
-export default class UserSevice implements IUserSevice {
+export default class UserSevice extends BaseService implements IUserSevice {
+    constructor() {
+        super(config.apiUser);
+    }
 
     getUserBy = async (auth: string) => {
-        await setToken();
-        return instance.get(`/accounts/open-id/${auth}`);
+
+        return this.get(`/accounts/open-id/${auth}`);
     };
 
     getSetting = async (user_id: string) => {
-        await setToken();
-        return instance.get(`/accounts/account-id/${user_id}/settings`);
+        return this.get(`/accounts/account-id/${user_id}/settings`);
     };
 
 }
-
-
-const setToken = async () => {
-    if (!auth)
-        throw new Error('The  Auth Client have not been initialized');
-
-    instance.defaults.headers.common['Authorization'] = `Bearer ${await auth.getTokenSilently()}`;
-};

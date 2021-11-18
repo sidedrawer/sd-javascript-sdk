@@ -7,8 +7,7 @@
     "main": "dist/index.js",
     "typings": "dist/index.d.ts",
     "files": [
-        "dist",
-        "src"
+        "dist"
     ],
     "engines": {
         "node": ">=12"
@@ -60,7 +59,8 @@
         "size-limit": "^5.0.2",
         "tsdx": "^0.14.1",
         "tslib": "^2.3.0",
-        "typescript": "^3.9.10"
+        "typescript": "^3.9.10",
+        "cross-env": "^7.0.3"
     },
     "dependencies": {
         "@auth0/auth0-spa-js": "^1.18.0",

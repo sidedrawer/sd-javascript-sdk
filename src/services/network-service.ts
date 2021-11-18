@@ -1,45 +1,38 @@
+import { AxiosResponse } from 'axios';
 import config from '../config.json';
-import axios from 'axios';
-import { auth } from './auth-service';
-
-const instance = axios.create({
-    baseURL: config.apiNetwork
-});
+import BaseService from './base-service';
 
 
 export interface INetworkService {
 
-    getTimeline(sidedrawer_id: string, type: string): Promise<any>;
-    getShared(): Promise<any>;
-    getOwned(): Promise<any>;
+    getTimeline(sidedrawer_id: string, type: string): Promise<AxiosResponse<any>>;
+    getShared(): Promise<AxiosResponse<any>>;
+    getOwned(): Promise<AxiosResponse<any>>;
 
 }
 
-export default class NetworkService implements INetworkService {
+export default class NetworkService extends BaseService implements INetworkService {
+    constructor() {
+        super(config.apiNetwork);
 
-    getTimeline = async (sidedrawer_id: string, type: string) => {
-        await setToken();
-        return instance.get(`sidedrawer/sidedrawer-id/${sidedrawer_id}/log?locale=en-CA&page=1&entityType=${type}`);
+    }
+
+    getTimeline = async (sidedrawer_id: string, type: string): Promise<AxiosResponse<any>> => {
+
+        return this.get(`sidedrawer/sidedrawer-id/${sidedrawer_id}/log?locale=en-CA&page=1&entityType=${type}`);
+
     };
 
-    getShared = async () => {
-        await setToken();
-        return instance.get(`sidedrawer/shared`);
+    getShared = async (): Promise<AxiosResponse<any>> => {
+
+        return this.get(`sidedrawer/shared`);
     };
 
-    getOwned = async () => {
-        await setToken();
-        return instance.get(`sidedrawer/owned`);
-    };
+    getOwned = async (): Promise<AxiosResponse<any>> => {
 
+        return this.get(`sidedrawer/owned`);
+    };
 
 }
 
-
-const setToken = async () => {
-    if (!auth)
-        throw new Error('The  Auth Client have not been initialized');
-
-    instance.defaults.headers.common['Authorization'] = `Bearer ${await auth.getTokenSilently()}`;
-};
 

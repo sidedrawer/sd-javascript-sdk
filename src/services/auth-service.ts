@@ -95,17 +95,17 @@ export interface IAuthClient {
     getTokenSilently(options?: GetTokenSilentlyOptions): Promise<any>;
 
     /**
- * ```js
- * authClient.logout();
- * ```
- *
- * Clears the application session and performs a redirect to `/v2/logout`, using
- * the parameters provided as arguments, to clear the Auth session.
+     * ```js
+     * authClient.logout();
+     * ```
+     *
+     * Clears the application session and performs a redirect to `/v2/logout`, using
+     * the parameters provided as arguments, to clear the Auth session.
 
- * [Read more about how Logout works at Auth](https://auth0.com/docs/logout).
- *
- * @param options
- */
+    * [Read more about how Logout works at Auth](https://auth0.com/docs/logout).
+    *
+    * @param options
+    */
     logout(options?: LogoutOptions): Promise<void>;
 
 }
@@ -113,13 +113,11 @@ export interface IAuthClient {
 export default class AuthClient implements IAuthClient {
 
     isAuthenticated = async (): Promise<boolean> => {
-
         return auth != null ? auth.isAuthenticated() : false;
     };
 
     handleRedirectCallback = async (url?: string): Promise<RedirectLoginResult> => {
         checkAuthClient();
-
         return auth!.handleRedirectCallback(url);
 
     };
@@ -157,6 +155,5 @@ export default class AuthClient implements IAuthClient {
 const checkAuthClient = async () => {
     if (!auth)
         throw new Error('The  Auth Client have not been initialized');
-
 };
 
