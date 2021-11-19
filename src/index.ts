@@ -3,6 +3,8 @@ import AuthClient, { createAuthClient, IAuthClient } from './services/auth-servi
 
 import RecordService, { IRecordService } from './services/record-service';
 
+import RecordFileService, { IRecordFileService } from './services/recordFile-service';
+
 import SidedrawerSevice, { ISidedrawerSevice } from './services/sidedrawer-service';
 
 import UserSevice, { IUserSevice } from './services/user-service';
@@ -15,6 +17,8 @@ export const networks: INetworkService = new NetworkService();
 
 export const records: IRecordService = new RecordService();
 
+export const recordfiles: IRecordFileService = new RecordFileService();
+
 export const sidedrawers: ISidedrawerSevice = new SidedrawerSevice();
 
 export const users: IUserSevice = new UserSevice();
@@ -22,6 +26,8 @@ export const users: IUserSevice = new UserSevice();
 export const createAuthSidedrawerClient = async (client_id: string) => {
     return await createAuthClient(client_id);
 };
+
+export * from './types';
 
 
 

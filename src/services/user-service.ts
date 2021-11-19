@@ -15,7 +15,6 @@ export default class UserSevice extends BaseService implements IUserSevice {
     }
 
     getUserBy = async (auth: string) => {
-
         return this.get(`/accounts/open-id/${auth}`);
     };
 

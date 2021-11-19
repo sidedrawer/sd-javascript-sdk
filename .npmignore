@@ -1,5 +1,5 @@
 
-dist/services/
+# dist/services/
 # dist/index.d.ts
 # dist/sidedrawer-javascript-sdk.cjs.development.js
 # dist/sidedrawer-javascript-sdk.cjs.development.js.map

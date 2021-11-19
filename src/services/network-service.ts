@@ -1,13 +1,14 @@
 import { AxiosResponse } from 'axios';
 import config from '../config.json';
 import BaseService from './base-service';
+import { SideDrawer } from '../types/sidedrawer';
 
 
 export interface INetworkService {
 
     getTimeline(sidedrawer_id: string, type: string): Promise<AxiosResponse<any>>;
     getShared(): Promise<AxiosResponse<any>>;
-    getOwned(): Promise<AxiosResponse<any>>;
+    getOwned(): Promise<AxiosResponse<SideDrawer[]>>;
 
 }
 
@@ -28,9 +29,9 @@ export default class NetworkService extends BaseService implements INetworkServi
         return this.get(`sidedrawer/shared`);
     };
 
-    getOwned = async (): Promise<AxiosResponse<any>> => {
+    getOwned = async (): Promise<AxiosResponse<SideDrawer[]>> => {
 
-        return this.get(`sidedrawer/owned`);
+        return this.get<SideDrawer[]>(`sidedrawer/owned`);
     };
 
 }
