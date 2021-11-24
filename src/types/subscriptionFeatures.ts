@@ -1,0 +1,29 @@
+export interface SubscriptionFeatures {
+    'account.featureAddOn': string;
+    'account.licensePriority': string;
+    'account.sponsorSideDrawers': string;
+    'sidedrawer.maxSDGBs': string;
+    'sidedrawer.maxSDRecords': string;
+    'sidedrawer.maxUploadMBs': string;
+    'account.guest.sd.editor': string;
+    'account.guest.sd.viewer': string;
+    'account.guest.sd.info': string;
+    'account.guest.record.editor': string;
+    'account.guest.record.viewer': string;
+    'account.guest.record.info': string;
+    'sidedrawer.guest.sd.editor': string;
+    'sidedrawer.guest.sd.viewer': string;
+    'sidedrawer.guest.sd.info': string;
+    'sidedrawer.guest.record.editor': string;
+    'sidedrawer.guest.record.viewer': string;
+    'sidedrawer.guest.record.info': string;
+    'sidedrawer.guest.any.notifications': string;
+    'sidedrawer.owned.any.notifications': string;
+    'sidedrawer.owned.sd.transferOwnership': string;
+    'sidedrawer.owned.sd.deleteSD': string;
+    'sidedrawer.owned.sd.multipleOwners': string;
+    'sidedrawer.any.sd.featureInbox': string;
+    'product.display': string;
+    'product.disabled': string;
+    'product.cancelPeriodEnd': string;
+}

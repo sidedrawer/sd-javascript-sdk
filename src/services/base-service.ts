@@ -24,6 +24,10 @@ export default class BaseService {
         return this.instance.post<T, AxiosResponse<T>>(url, data, config);
     }
 
+    protected put = async <T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> => {
+        await this.setToken();
+        return this.instance.put<T, AxiosResponse<T>>(url, data, config);
+    }
 
     private setToken = async () => {
         if (!auth)

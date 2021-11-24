@@ -1,11 +1,11 @@
-export * from './sidedrawer';
+export * from './sidedrawerMain';
 export * from './sidedrawerRoles';
-export * from './cloudStorageFile';
-export * from './cloudStorageFolder';
-export * from './fileItem';
-export * from './fileType';
-export * from './provider';
 export * from './recordFile';
+export * from './sidedrawer';
+export * from './record';
+export * from './recordType';
+export * from './recordSubType';
+
 
 
 

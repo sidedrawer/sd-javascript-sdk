@@ -1,14 +1,28 @@
 import { SidedrawerRoles } from './sidedrawerRoles'
+import { Provider } from './provider'
+import { SubscriptionFeatures } from './subscriptionFeatures'
+import { Account } from './account'
+import { RecordType } from './recordType'
 
 export interface SideDrawer {
 
     id?: string,
     name?: string,
-    networkId?: string,
-    plan?: string,
-    sdPhoto?: string,
-    sdRole?: SidedrawerRoles,
+    firstName?: string,
+    lastName?: string,
+    email?: string,
+    profilePhoto?: string,
     isDefault?: boolean,
+    status?: string,
+    userSidedrawerRole?: SidedrawerRoles[],
+    subscriptionFeatures?: SubscriptionFeatures,
+    type?: string,
+    recordsType?: RecordType[],
+    active?: boolean,
+    maxRecordsReached?: boolean,
+    integrations?: Provider[],
+    licenseKey?: string,
+    brandCode?: string,
+    owners?: Account[]
 
 }
-

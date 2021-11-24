@@ -1,12 +1,13 @@
 import config from '../config.json';
 import BaseService from './base-service';
 import { AxiosResponse } from 'axios';
+import { Record } from '../types';
 
 
 export interface IRecordService {
 
-    getBySidedrawer(sidedrawer_id: string): Promise<AxiosResponse<any>>;
-    getUserSetting(user_id: string): Promise<AxiosResponse<any>>;
+    getBySidedrawer(sidedrawer_id: string): Promise<AxiosResponse<Record[]>>;
+
 
 }
 export default class RecordService extends BaseService implements IRecordService {
@@ -14,16 +15,12 @@ export default class RecordService extends BaseService implements IRecordService
         super(config.apiRecord);
     }
 
-    getBySidedrawer = async (sidedrawer_id: string): Promise<AxiosResponse<any>> => {
-        return this.get(`sidedrawer/sidedrawer-id/${sidedrawer_id}/records`);
+    getBySidedrawer = async (sidedrawer_id: string): Promise<AxiosResponse<Record[]>> => {
+        return this.get<Record[]>(`sidedrawer/sidedrawer-id/${sidedrawer_id}/records`);
 
     };
 
-    getUserSetting = async (user_id: string): Promise<AxiosResponse<any>> => {
 
-        return this.get(`/accounts/account-id/${user_id}/settings`);
-
-    };
 
 }
 
