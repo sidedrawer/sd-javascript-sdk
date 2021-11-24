@@ -7,7 +7,7 @@ import RecordFileService, { IRecordFileService } from './services/recordFile-ser
 
 import SidedrawerSevice, { ISidedrawerSevice } from './services/sidedrawer-service';
 
-import UserSevice, { IUserSevice } from './services/user-service';
+import AccountSevice, { IAccountSevice } from './services/account-service';
 
 import NetworkService, { INetworkService } from './services/network-service';
 
@@ -21,7 +21,7 @@ export const recordfiles: IRecordFileService = new RecordFileService();
 
 export const sidedrawers: ISidedrawerSevice = new SidedrawerSevice();
 
-export const users: IUserSevice = new UserSevice();
+export const users: IAccountSevice = new AccountSevice();
 
 export const createAuthSidedrawerClient = async (client_id: string) => {
     return await createAuthClient(client_id);

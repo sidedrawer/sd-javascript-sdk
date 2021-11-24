@@ -9,8 +9,11 @@ import fs from 'fs';
 export interface IRecordFileService {
 
     getByRecord(sidedrawer_id: string, record_id: string): Promise<AxiosResponse<RecordFile[]>>;
-    remove(sidedrawer_id: string, record_id: string, fileName: string): Promise<AxiosResponse<any>>;
+
     getStreamByUrl(url: string): Promise<AxiosResponse<any>>;
+
+    remove(sidedrawer_id: string, record_id: string, fileName: string): Promise<AxiosResponse<any>>;
+
     postLocalFile(sidedrawer_id: string, record_id: string, urlFile: string, recordFile: RecordFile): Promise<AxiosResponse<any>>;
 
 }
@@ -25,14 +28,13 @@ export default class RecordFileService extends BaseService implements IRecordFil
 
     };
 
-    remove = async (sidedrawer_id: string, record_id: string, fileName: string): Promise<AxiosResponse<any>> => {
-        return this.delete(`sidedrawer/sidedrawer-id/${sidedrawer_id}/records/record-id/${record_id}/record-files/${fileName}`);
-
-    };
-
     getStreamByUrl = async (url: string): Promise<AxiosResponse<any>> => {
         return this.get(url, { responseType: 'stream' });
 
+    };
+
+    remove = async (sidedrawer_id: string, record_id: string, fileName: string): Promise<AxiosResponse<any>> => {
+        return this.delete(`sidedrawer/sidedrawer-id/${sidedrawer_id}/records/record-id/${record_id}/record-files/${fileName}`);
     };
 
     postLocalFile = async (sidedrawer_id: string, record_id: string, urlFile: string, recordFile: RecordFile): Promise<AxiosResponse<any>> => {

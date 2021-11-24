@@ -143,7 +143,7 @@ export default class AuthClient implements IAuthClient {
 
     logout = async (options?: LogoutOptions): Promise<void> => {
         checkAuthClient();
-        return await auth!.logout(options);
+        return auth!.logout(options);
 
     };
 
@@ -152,7 +152,7 @@ export default class AuthClient implements IAuthClient {
 
 
 
-const checkAuthClient = async () => {
+const checkAuthClient = () => {
     if (!auth)
         throw new Error('The  Auth Client have not been initialized');
 };

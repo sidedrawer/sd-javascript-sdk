@@ -1,4 +1,3 @@
-import { DisplayValue } from './displayValue'
 
 export interface Contributor {
 

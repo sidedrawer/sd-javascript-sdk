@@ -1,6 +1,6 @@
 import { Settings } from './settings'
 import { PrimaryResidence } from './primaryResidence'
-import { Email } from './Email'
+import { Email } from './email'
 import { Agreement } from './agreement'
 import { Phone } from './phone'
 
