@@ -61,7 +61,7 @@ export default class AccountSevice extends BaseService implements IAccountSevice
     }
 
     updateSettings = async (account_id: string, settings: Settings): Promise<AxiosResponse<Settings>> => {
-        return this.put<Settings>(`/accounts/account-id/${account_id}/settings`, settings);
+        return this.put<Settings>(`accounts/account-id/${account_id}/settings`, settings);
     }
 
     update = async (account_id: string, account: Account): Promise<AxiosResponse<Account>> => {
@@ -76,19 +76,19 @@ export default class AccountSevice extends BaseService implements IAccountSevice
     create = async (account: Account, brandCode: string, referralCode?: string, invitationCode?: string): Promise<AxiosResponse<{ id: string }>> => {
 
         let body = {};
-        if (!!referralCode) {
+        if (!!referralCode)
             body = { ...body, referralCode };
-        }
-        if (!!invitationCode) {
+
+        if (!!invitationCode)
             body = { ...body, invitationCode };
-        }
+
         body = { ...body, ...account };
-        return this.post<{ id: string }>(`/accounts?brandCode=${brandCode}`, body);
+        return this.post<{ id: string }>(`accounts?brandCode=${brandCode}`, body);
     }
 
     remove = async (account_id: string): Promise<AxiosResponse<any>> => {
 
-        return this.delete(`/accounts/account-id/${account_id}`);
+        return this.delete(`accounts/account-id/${account_id}`);
     };
 
 
