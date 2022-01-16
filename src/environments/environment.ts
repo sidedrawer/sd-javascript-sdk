@@ -1,15 +1,18 @@
-export const environment = {
-    // APIS -----------------------------------------------------------
-    configApi: 'https://config-api-dev.sidedrawerdev.com/api/v1/',
-    developmentApi: 'https://developer-api-dev.sidedrawerdev.com/api/v1/',
-    tenantApi: 'https://tenants-api-dev.sidedrawerdev.com/api/v1/',
-    inboxApi: 'https://inbox-api-dev.sidedrawerdev.com/api/v1/',
-    integrationApi: 'https://integration-api-dev.sidedrawerdev.com/api/v1/',
-    networksApi: 'https://networks-api-dev.sidedrawerdev.com/api/v1/',
-    recordsApi: 'https://records-api-dev.sidedrawerdev.com/api/v1/',
-    subscriptionApi: 'https://subscriptions-api-dev.sidedrawerdev.com/api/v1/',
-    userApi: 'https://user-api-dev.sidedrawerdev.com/api/v1/',
-    plansApi: 'https://plans-api-dev.sidedrawerdev.com/api/v1/',
-    // CDN -----------------------------------------------------------
-    cdn: 'https://cdn.sidedrawerdev.com/',
-};
+import {Environment} from "../models/environment.enum";
+import {environmentDevelopment} from "./environment.development";
+import {environmentProduction} from "./environment.production";
+import {environmentSandbox} from "./environment.sandbox";
+import {environmentUat} from "./environment.uat";
+
+export const env = (environment: Environment) => {
+    switch (environment) {
+        case Environment.development:
+            return environmentDevelopment;
+        case Environment.production:
+            return environmentProduction;
+        case Environment.sandbox:
+            return environmentSandbox;
+        case Environment.uat:
+            return environmentUat;
+    }
+}
