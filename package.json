@@ -10,6 +10,9 @@
   "engines": {
     "node": ">=10"
   },
+  "repository": {
+    "url": "https://github.com/sidedrawer/sd-javascript-sdk.git"
+  },
   "scripts": {
     "start": "tsdx watch",
     "build": "tsdx build",
@@ -31,7 +34,7 @@
     "trailingComma": "es5"
   },
   "name": "sd-javascript-sdk",
-  "author": "Conrado Campetella",
+  "author": "SideDrawer Inc.",
   "module": "dist/sd-javascript-sdk.esm.js",
   "size-limit": [
     {
