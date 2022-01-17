@@ -198,7 +198,7 @@ export class FilesModule {
         return fetch(
             this.recordsApi + `sidedrawer/sidedrawer-id/${payload?.sidedrawerId}/records/record-id/${payload?.recordId}/record-files/${payload.fileNameWithExtension}`,
             {
-                method: 'GET',
+                method: 'DELETE',
                 headers: {
                     'Authorization': `Bearer ${payload?.token}`,
                     'Content-Type': 'application/json',
