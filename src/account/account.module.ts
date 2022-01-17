@@ -1,6 +1,10 @@
 import {Environment} from "../models/environment.enum";
 import {env} from "../environments/environment";
 
+/**
+ * @module
+ * Account Module to handle Account related information
+ */
 export class AccountModule {
     private userApi: string;
 

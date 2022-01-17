@@ -34,7 +34,7 @@ export class SideDrawerModule {
      * @param payload.licenseKey License Key to apply to the SideDrawer
      * @param payload.dataBaseRegion SideDrawer DataBase Region
      * @param payload.default used to set this SideDrawer as the owner defaults
-     * @param payload.editable use to enable the edition of the SideDrawer, default value true
+     * @param payload.editable used to enable the edition of the SideDrawer, default value true
      * @param payload.metadata custom information saved at SideDrawer level
      */
     createSideDrawer(payload: {
@@ -62,7 +62,7 @@ export class SideDrawerModule {
         dataBaseRegion?: string,
         /** used to set this SideDrawer as the owner defaults */
         default?: boolean,
-        /** use to enable the edition of the SideDrawer, default value true */
+        /** used to enable the edition of the SideDrawer, default value true */
         editable?: boolean,
         /** custom information saved at SideDrawer level */
         metadata?: {}
