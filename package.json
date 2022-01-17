@@ -1,73 +1,58 @@
 {
-    "name": "sidedrawer-javascript-sdk",
-    "author": "Juan Matias Doder",
-    "description": "This is a sdk of SideDrawer to help to build development quickly.",
-    "version": "0.1.22",
-    "license": "MIT",
-    "main": "dist/index.js",
-    "typings": "dist/index.d.ts",
-    "files": [
-        "dist"
-    ],
-    "engines": {
-        "node": ">=12"
-    },
-    "keywords": [
-        "sidedrawer",
-        "sdk",
-        "typescript"
-    ],
-    "homepage": "https://www.sidedrawer.com/",
-    "repository": "git://github.com/sidedrawer/sd-javascript-sdk.git",
-    "bugs": {
-        "url": "https://help.sidedrawer.com/en/"
-    },
-    "scripts": {
-        "start": "tsdx watch",
-        "build": "tsdx build",
-        "test": "tsdx test",
-        "lint": "tsdx lint",
-        "prepare": "tsdx build",
-        "size": "size-limit",
-        "analyze": "size-limit --why"
-    },
-    "husky": {
-        "hooks": {
-            "pre-commit": "tsdx lint"
-        }
-    },
-    "prettier": {
-        "printWidth": 80,
-        "semi": true,
-        "singleQuote": true,
-        "trailingComma": "es5"
-    },
-    "module": "dist/sdk-typescript.esm.js",
-    "size-limit": [
-        {
-            "path": "dist/sdk-typescript.cjs.production.min.js",
-            "limit": "10 KB"
-        },
-        {
-            "path": "dist/sdk-typescript.esm.js",
-            "limit": "10 KB"
-        }
-    ],
-    "devDependencies": {
-        "@size-limit/preset-small-lib": "^5.0.2",
-        "husky": "^7.0.1",
-        "size-limit": "^5.0.2",
-        "tsdx": "^0.14.1",
-        "tslib": "^2.3.0",
-        "typescript": "^3.9.10",
-        "cross-env": "^7.0.3"
-    },
-    "dependencies": {
-        "@auth0/auth0-spa-js": "^1.18.0",
-        "axios": "^0.21.1",
-        "form-data": "^4.0.0",
-        "fs": "0.0.1-security",
-        "openid-client": "^4.7.4",
-        "rxjs": "^6.6.7"
+  "version": "0.0.2",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "typings": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "engines": {
+    "node": ">=10"
+  },
+  "repository": {
+    "url": "https://github.com/sidedrawer/sd-javascript-sdk.git"
+  },
+  "scripts": {
+    "start": "tsdx watch",
+    "build": "tsdx build",
+    "test": "tsdx test",
+    "lint": "tsdx lint",
+    "prepare": "tsdx build",
+    "size": "size-limit",
+    "analyze": "size-limit --why"
+  },
+  "husky": {
+    "hooks": {
+      "pre-commit": "tsdx lint"
     }
+  },
+  "prettier": {
+    "printWidth": 80,
+    "semi": true,
+    "singleQuote": true,
+    "trailingComma": "es5"
+  },
+  "name": "sd-javascript-sdk",
+  "author": "SideDrawer Inc.",
+  "module": "dist/sd-javascript-sdk.esm.js",
+  "size-limit": [
+    {
+      "path": "dist/sd-javascript-sdk.cjs.production.min.js",
+      "limit": "10 KB"
+    },
+    {
+      "path": "dist/sd-javascript-sdk.esm.js",
+      "limit": "10 KB"
+    }
+  ],
+  "devDependencies": {
+    "@size-limit/preset-small-lib": "^7.0.4",
+    "husky": "^7.0.4",
+    "size-limit": "^7.0.4",
+    "tsdx": "^0.14.1",
+    "tslib": "^2.3.1",
+    "typedoc": "^0.20.37",
+    "typescript": "^3.9.10"
+  }
 }
