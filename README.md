@@ -27,7 +27,7 @@ Create an instance of the SDK:
 ```javascript
 const sd = new SideDrawer({
     accessToken: '...'
-}); # you can target a different environment, using { baseUrl: 'https://...' }
+}); // you can target a different environment, using { baseUrl: 'https://...' }
 ```
 
 Then you can use the different modules to communicate with our APIs. For example, to search records:
