@@ -2,37 +2,68 @@
 
 SDK for the SideDrawer API
 
-> This project embrace `tyoescript`.
-
-> If you’re new to TypeScript, checkout [this handy cheatsheet](https://devhints.io/typescript)
-
 ## Installation
 
 To install the SDK, use:
 
 ```bash
-npm install -S sd-javascript-sdk 
+npm install -S @sidedrawer/sdk
 ```
 
 ## Example
 
+Import SDK
+
+```bash
+import SideDrawer from "@sidedrawer/sdk";
+```
+
+```bash
+const SideDrawer = require("@sidedrawer/sdk");
+```
+
 Create an instance of the SDK:
 
 ```bash
-const sdk = new SdSdk(); # you can target a different environment, for example: const sdk = new SdSdk('development')
+const sd = new SideDrawer({
+    accessToken: '...'
+}); # you can target a different environment, using { baseUrl: 'https://...' }
 ```
 
-Then you can use the different modules to communicate with our APIs. For example, to create a record:
+Then you can use the different modules to communicate with our APIs. For example, to search records:
 
 ```bash
-const sdk = new SdSdk();
-const myRecord = await sdk.Records.createRecord({
-    token: 'My Token',
-    sidedrawerId: '619239517d01feacb5947f63',
-    recordTypeName: 'corporateDocs',
-    name: 'My Record Name',
-    description: 'My Record Description',
-    recordSubtypeName: 'will',
-    editable: true,
-})
+const sd = new SideDrawer({
+    accessToken: '...'
+});
+
+const records = await sd.records.search({
+    sidedrawerId: '...',
+    displayInactive: false,
+    locale: 'en-US'
+});
+```
+
+Create an instance of single SDK module:
+
+```bash
+import { Context, Records } from "@sidedrawer/sdk";
+
+const context = new Context({
+    accessToken: '...'
+});
+
+const records = new Records(context);
+```
+
+or
+
+```bash
+const SideDrawer = require("@sidedrawer/sdk");
+
+const context = new SideDrawer.Context({
+    accessToken: '...'
+});
+
+const records = new SideDrawer.Records(context);
 ```
