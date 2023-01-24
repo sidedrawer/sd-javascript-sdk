@@ -14,11 +14,11 @@ npm install -S @sidedrawer/sdk
 
 Import SDK
 
-```bash
+```javascript
 import SideDrawer from "@sidedrawer/sdk";
 ```
 
-```bash
+```javascript
 const SideDrawer = require("@sidedrawer/sdk");
 ```
 
