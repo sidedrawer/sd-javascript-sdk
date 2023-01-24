@@ -24,7 +24,7 @@ const SideDrawer = require("@sidedrawer/sdk");
 
 Create an instance of the SDK:
 
-```bash
+```javascript
 const sd = new SideDrawer({
     accessToken: '...'
 }); # you can target a different environment, using { baseUrl: 'https://...' }
@@ -32,7 +32,7 @@ const sd = new SideDrawer({
 
 Then you can use the different modules to communicate with our APIs. For example, to search records:
 
-```bash
+```javascript
 const sd = new SideDrawer({
     accessToken: '...'
 });
@@ -46,7 +46,7 @@ const records = await sd.records.search({
 
 Create an instance of single SDK module:
 
-```bash
+```javascript
 import { Context, Records } from "@sidedrawer/sdk";
 
 const context = new Context({
@@ -58,7 +58,7 @@ const records = new Records(context);
 
 or
 
-```bash
+```javascript
 const SideDrawer = require("@sidedrawer/sdk");
 
 const context = new SideDrawer.Context({
