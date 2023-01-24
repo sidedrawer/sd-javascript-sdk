@@ -30,7 +30,9 @@ const sd = new SideDrawer({
 }); // you can target a different environment, using { baseUrl: 'https://...' }
 ```
 
-Then you can use the different modules to communicate with our APIs. For example, to search records:
+Then you can use the different modules to communicate with our APIs. Examples:
+
+Search Records
 
 ```javascript
 const sd = new SideDrawer({
@@ -41,6 +43,30 @@ const records = await sd.records.search({
     sidedrawerId: '...',
     displayInactive: false,
     locale: 'en-US'
+});
+```
+
+Upload File to Record
+
+```javascript
+const sd = new SideDrawer({
+    accessToken: '...'
+});
+
+const controller = new AbortController();
+const file = document.querySelector('#file-input').files[0];
+
+await sd.files.upload({
+  sidedrawerId: "...",
+  recordId: "...",
+  file,
+  fileName: "...",
+  uploadTitle: "...",
+  fileType: "...",
+  fileExtension: "..",
+  signal: controller.signal,
+  maxRetries: 1,
+  maxConcurrency: 1
 });
 ```
 
