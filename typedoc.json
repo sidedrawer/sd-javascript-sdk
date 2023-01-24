@@ -1,0 +1,12 @@
+{
+    "$schema": "https://typedoc.org/schema.json",
+    "entryPointStrategy": "resolve",
+    "entryPoints": [
+        "./src/index.ts"
+    ],
+    "excludeProtected": true,
+    "excludePrivate": true,
+    "excludeInternal": true,
+    "excludeNotDocumented": false,
+    "out": "docs"
+}
