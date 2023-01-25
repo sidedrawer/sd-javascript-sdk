@@ -38,7 +38,7 @@
     "build-docs": "npx typedoc --options typedoc.json"
   },
   "author": "SideDrawer Inc.",
-  "license": "ISC",
+  "license": "MIT",
   "devDependencies": {
     "@parcel/packager-ts": "^2.8.2",
     "@parcel/transformer-typescript-types": "^2.8.2",
