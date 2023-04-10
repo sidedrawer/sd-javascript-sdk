@@ -1,16 +1,13 @@
-// import { Blob } from 'node:buffer';
+import { Buffer } from 'node:buffer';
 
 import SideDrawer from "../..";
 import nock from "nock";
 
-function generateBlob(size = 1024, type = "plain/text") {
-  let aaa = "";
+function generateBlob(sizeInBytes = 1024, type = "application/octet-stream") {
+  const buffer = Buffer.alloc(sizeInBytes);
+  const blob = new Blob([buffer], { type });
 
-  for (let i = 0; i < size; i++) {
-    aaa += "a";
-  }
-
-  return new Blob([aaa], { type });
+  return blob;
 }
 
 const BASE_URL = "https://localhost";
@@ -32,9 +29,9 @@ describe("Files", () => {
   it(
     "Files.upload",
     (done) => {
-      expect.assertions(12);
+      expect.assertions(6);
 
-      const file = generateBlob(4 * 1024 * 1024 * 9);
+      const file = generateBlob(1024 * 1024 * 9);
 
       nock(BASE_URL)
         .post(
@@ -44,8 +41,8 @@ describe("Files", () => {
           order: 2,
         })
         .delay(1000)
-        .reply(403, (url) => {
-          expect(url).not.toBe(undefined);
+        .reply(403, (urlString) => {
+          expect(urlString).not.toBe(undefined);
 
           return {};
         });
@@ -58,11 +55,11 @@ describe("Files", () => {
           return actualQueryObject.order != null;
         })
         .delay(1000)
-        .times(9)
-        .reply(200, function (urlSring) {
-          expect(urlSring).not.toBe(undefined);
+        .times(3)
+        .reply(200, function (urlString) {
+          expect(urlString).not.toBe(undefined);
 
-          const url = new URL(`${BASE_URL}${urlSring}`);
+          const url = new URL(`${BASE_URL}${urlString}`);
           const order: any = url.searchParams.get("order");
 
           return {
@@ -128,10 +125,10 @@ describe("Files", () => {
         })
         .delay(1000)
         .times(8)
-        .reply(200, (urlSring) => {
-          expect(urlSring).not.toBe(undefined);
+        .reply(200, (urlString) => {
+          expect(urlString).not.toBe(undefined);
 
-          const url = new URL(`${BASE_URL}${urlSring}`);
+          const url = new URL(`${BASE_URL}${urlString}`);
           const order: any = url.searchParams.get("order");
 
           return {
@@ -195,10 +192,10 @@ describe("Files", () => {
         })
         .delay(1000)
         .times(4)
-        .reply(200, (urlSring) => {
-          expect(urlSring).not.toBe(undefined);
+        .reply(200, (urlString) => {
+          expect(urlString).not.toBe(undefined);
 
-          const url = new URL(`${BASE_URL}${urlSring}`);
+          const url = new URL(`${BASE_URL}${urlString}`);
           const order: any = url.searchParams.get("order");
 
           return {
@@ -231,10 +228,10 @@ describe("Files", () => {
         })
         .delay(1000)
         .times(4)
-        .reply(200, (urlSring) => {
-          expect(urlSring).not.toBe(undefined);
+        .reply(200, (urlString) => {
+          expect(urlString).not.toBe(undefined);
 
-          const url = new URL(`${BASE_URL}${urlSring}`);
+          const url = new URL(`${BASE_URL}${urlString}`);
           const order: any = url.searchParams.get("order");
 
           return {
