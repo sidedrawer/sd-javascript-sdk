@@ -5,3 +5,10 @@ export interface DisplayValue {
   value: string;
   description?: string;
 }
+
+export interface ExternalKey {
+  key: string;
+  value: string;
+}
+
+export type ExternalKeys = ExternalKey[];
