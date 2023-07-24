@@ -18,6 +18,7 @@ import { Abortable, ObservablePromise } from "../types/core";
 import { FileDetail, FileRecordQueryParams } from "../types/files";
 import { isBrowserEnvironment, isRequired } from "../utils/core";
 import { generateHash } from "../utils/crypto";
+import { AxiosProgressEvent } from "axios";
 
 interface UploadProcessParams {
   httpService: HttpService;
@@ -63,10 +64,11 @@ export interface FileDownloadParams {
   fileToken?: string;
 }
 
-export type FileDownloadResponseType = "blob" | "arraybuffer" | "stream";
+export type FileDownloadResponseType = "blob" | "arraybuffer";
 
 export interface FileDownloadOptions {
   responseType: FileDownloadResponseType;
+  progressSubscriber$?: Subject<number>;
 }
 
 class UploadProcess {
@@ -153,6 +155,18 @@ class UploadProcess {
 
     uploadedBytesByBlockOrder[uploadProcessBlock.order] = 0;
 
+    let onUploadProgress:
+      | ((progressEvent: AxiosProgressEvent) => void)
+      | undefined;
+
+    if (isBrowserEnvironment()) {
+      onUploadProgress = (progressEvent: AxiosProgressEvent) => {
+        uploadedBytesByBlockOrder[uploadProcessBlock.order] =
+          progressEvent.loaded;
+        this.emitUploadProgress();
+      };
+    }
+
     return this.httpService
       .post<UploadResponse>(
         `/api/v2/blocks/sidedrawer/sidedrawer-id/${sidedrawerId}/records/record-id/${recordId}/upload`,
@@ -167,10 +181,7 @@ class UploadProcess {
             "Content-Type": "multipart/form-data",
           },
           signal,
-          /*onUploadProgress: (progressEvent) => {
-            uploadedBytesByBlockOrder[uploadProcessBlock.order] = progressEvent.loaded;
-            this.emitUploadProgress();
-          }*/
+          onUploadProgress,
         }
       )
       .pipe(
@@ -375,8 +386,10 @@ export default class Files {
       ...options
     } = params;
 
-    const { responseType = isBrowserEnvironment() ? "blob" : "arraybuffer" } =
-      options;
+    const {
+      responseType = isBrowserEnvironment() ? "blob" : "arraybuffer",
+      progressSubscriber$,
+    } = options;
 
     let downloadUrl;
 
@@ -388,8 +401,28 @@ export default class Files {
       return isRequired("fileNameWithExtension or fileToken");
     }
 
+    let onDownloadProgress:
+      | ((progressEvent: AxiosProgressEvent) => void)
+      | undefined;
+
+    if (isBrowserEnvironment()) {
+      onDownloadProgress = (progressEvent: AxiosProgressEvent) => {
+        if (
+          progressSubscriber$ !== undefined &&
+          progressEvent.total !== undefined
+        ) {
+          const progress = Math.round(
+            (progressEvent.loaded * 100) / progressEvent.total
+          );
+
+          progressSubscriber$.next(progress);
+        }
+      };
+    }
+
     return this.context.http.get<DownloadResponse>(downloadUrl, {
       responseType,
+      onDownloadProgress,
     });
   }
 }
