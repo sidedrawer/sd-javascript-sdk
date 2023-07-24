@@ -14,7 +14,7 @@
     "build": "npx rollup --config",
     "test": "npx jest --runInBand --detectOpenHandles --coverage",
     "build-docs": "npx typedoc --options typedoc.json",
-    "size": "npm run build && size-limit"
+    "size": "npx size-limit"
   },
   "author": "SideDrawer Inc.",
   "license": "MIT",
@@ -44,7 +44,8 @@
   },
   "size-limit": [
     {
-      "path": "dist/index.browser.js"
+      "path": "dist/index.browser.js",
+      "limit": "100 kB"
     }
   ]
 }
