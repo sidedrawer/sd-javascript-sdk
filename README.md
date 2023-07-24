@@ -60,6 +60,12 @@ const sd = new SideDrawer({
 const controller = new AbortController();
 const file = document.querySelector('#file-input').files[0];
 
+const progressSubscriber$ = new Subject<number>();
+
+progressSubscriber$.subscribe((progressPercentage: number) => {
+    console.log(`Upload progress: ${progressPercentage}`);
+});
+
 await sd.files.upload({
   // params
   sidedrawerId: "...",
@@ -69,10 +75,17 @@ await sd.files.upload({
   uploadTitle: "...",
   fileType: "...",
   fileExtension: "..",
+  metadata: {
+    testKey: "test value",
+  },
+  externalKeys: [
+    { key: "test", value: "test" }
+  ],
+  progressSubscriber$,
   // options
   signal: controller.signal,
   maxRetries: 1,
-  maxConcurrency: 1
+  maxConcurrency: 1,
 });
 ```
 
