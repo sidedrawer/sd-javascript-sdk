@@ -4,16 +4,20 @@ import {
   Observable,
   of,
   retry,
+  Subject,
+  Subscriber,
   switchMap,
+  tap,
   toArray,
 } from "rxjs";
 
 import Context from "../core/Context";
 import HttpService from "../core/HttpService";
-import { Metadata } from "../types/base";
+import { ExternalKeys, Metadata } from "../types/base";
 import { Abortable, ObservablePromise } from "../types/core";
 import { FileDetail, FileRecordQueryParams } from "../types/files";
-import { isRequired, IS_NODE_ENVIRONMENT } from "../utils/core";
+import { isBrowserEnvironment, isRequired } from "../utils/core";
+import { generateHash } from "../utils/crypto";
 
 interface UploadProcessParams {
   httpService: HttpService;
@@ -28,14 +32,19 @@ type UploadResponse = {
 };
 
 interface UploadProcessBlock {
-  block: Blob | ArrayBuffer;
+  block: ArrayBuffer;
   order: number;
   hash?: string;
+  size: number;
+  checksum: string;
 }
 
 export interface FileUploadOptions extends Abortable {
   maxRetries: number;
   maxConcurrency: number;
+  isNodeEnvironment: boolean;
+  progressSubscriber$?: Subject<number>;
+  maxChunkSizeBytes: number;
 }
 
 export interface FileUploadParams extends FileRecordQueryParams {
@@ -43,9 +52,23 @@ export interface FileUploadParams extends FileRecordQueryParams {
   recordId: string;
   file: File | Blob;
   metadata?: Metadata;
+  externalKeys?: ExternalKeys;
 }
 
-const MAX_CHUNK_SIZE_BYTES = 4 * 1024 * 1024;
+type DownloadResponse = Blob | ArrayBuffer | ReadableStream;
+
+export interface FileDownloadParams {
+  sidedrawerId: string;
+  recordId: string;
+  fileNameWithExtension?: string;
+  fileToken?: string;
+}
+
+export type FileDownloadResponseType = "blob" | "arraybuffer" | "stream";
+
+export interface FileDownloadOptions {
+  responseType: FileDownloadResponseType;
+}
 
 class UploadProcess {
   private sidedrawerId: string;
@@ -53,69 +76,83 @@ class UploadProcess {
   private httpService: HttpService;
   private file: File | Blob;
 
-  constructor({
-    httpService,
-    file,
-    sidedrawerId,
-    recordId,
-  }: UploadProcessParams) {
+  private uploadedBytesByBlockOrder: {
+    [key: number]: number;
+  };
+
+  private progressSubscriber$?: Subject<number>;
+  private maxChunkSizeBytes: number;
+
+  constructor(
+    { httpService, file, sidedrawerId, recordId }: UploadProcessParams,
+    { progressSubscriber$, maxChunkSizeBytes }: FileUploadOptions
+  ) {
     this.httpService = httpService;
     this.file = file;
     this.sidedrawerId = sidedrawerId;
     this.recordId = recordId;
+    this.uploadedBytesByBlockOrder = {};
+    this.progressSubscriber$ = progressSubscriber$;
+    this.maxChunkSizeBytes = maxChunkSizeBytes;
   }
 
-  private async getBlock(blob: Blob): Promise<Blob | ArrayBuffer> {
-    let block: Blob | ArrayBuffer = blob;
+  async getFileChecksum(): Promise<string> {
+    const fileArrayBuffer: ArrayBuffer = await this.file.arrayBuffer();
+    return await generateHash(fileArrayBuffer, "SHA-256");
+  }
 
-    if (IS_NODE_ENVIRONMENT) {
-      block = await blob.arrayBuffer();
+  private async emitBlock(
+    subscriber: Subscriber<UploadProcessBlock>,
+    totalChunks: number,
+    i: number
+  ): Promise<void> {
+    if (i === totalChunks) {
+      subscriber.complete();
+
+      return;
     }
 
-    return block;
+    const start = i * this.maxChunkSizeBytes;
+    const end = Math.min(start + this.maxChunkSizeBytes, this.file.size);
+
+    const blob: Blob = this.file.slice(start, end);
+    const block: ArrayBuffer = await blob.arrayBuffer();
+    const size = block.byteLength;
+
+    const checksum = await generateHash(block, "SHA-256");
+
+    const data: UploadProcessBlock = {
+      block,
+      order: i + 1,
+      size,
+      checksum,
+    };
+
+    subscriber.next(data);
+    await this.emitBlock(subscriber, totalChunks, i + 1);
   }
 
-  private createBlocks(): Observable<UploadProcessBlock> {
-    return new Observable<UploadProcessBlock>((subscriber) => {
-      let start = 0;
-      let end = 0;
-      let order = 1;
+  private emitBlocks(): Observable<UploadProcessBlock> {
+    const self = this;
 
-      const emitChunk = () => {
-        end = start + MAX_CHUNK_SIZE_BYTES;
+    return new Observable<UploadProcessBlock>(
+      (subscriber: Subscriber<UploadProcessBlock>) => {
+        const totalChunks = Math.ceil(self.file.size / this.maxChunkSizeBytes);
 
-        const blob = this.file.slice(start, end);
-
-        this.getBlock(blob)
-          .then((block) => {
-            subscriber.next({
-              block,
-              order,
-            } satisfies UploadProcessBlock);
-
-            start = end;
-            order += 1;
-
-            if (start < this.file.size) {
-              emitChunk();
-            } else {
-              subscriber.complete();
-            }
-          })
-          .catch((err) => {
-            subscriber.error(err);
-          });
-      };
-
-      emitChunk();
-    });
+        self
+          .emitBlock(subscriber, totalChunks, 0)
+          .catch((e) => subscriber.error(e));
+      }
+    );
   }
 
   private uploadBlock(
     uploadProcessBlock: UploadProcessBlock,
     signal?: AbortSignal
   ): Observable<UploadProcessBlock> {
-    const { sidedrawerId, recordId } = this;
+    const { sidedrawerId, recordId, uploadedBytesByBlockOrder } = this;
+
+    uploadedBytesByBlockOrder[uploadProcessBlock.order] = 0;
 
     return this.httpService
       .post<UploadResponse>(
@@ -131,6 +168,10 @@ class UploadProcess {
             "Content-Type": "multipart/form-data",
           },
           signal,
+          /*onUploadProgress: (progressEvent) => {
+            uploadedBytesByBlockOrder[uploadProcessBlock.order] = progressEvent.loaded;
+            this.emitUploadProgress();
+          }*/
         }
       )
       .pipe(
@@ -139,36 +180,65 @@ class UploadProcess {
           uploadProcessBlock.hash = hash;
 
           return of(uploadProcessBlock);
+        }),
+        tap((uploadProcessBlock) => {
+          uploadedBytesByBlockOrder[uploadProcessBlock.order] =
+            uploadProcessBlock.size;
+          this.emitUploadProgress();
         })
       );
+  }
+
+  emitUploadProgress() {
+    if (this.progressSubscriber$ == null) {
+      return;
+    }
+
+    const totalUploadedBytes = Object.values(
+      this.uploadedBytesByBlockOrder
+    ).reduce((accumulator, blockUploadedBytes) => {
+      return accumulator + blockUploadedBytes;
+    }, 0);
+
+    const uploadedPercentage = Math.round(
+      (totalUploadedBytes * 100) / this.file.size
+    );
+
+    this.progressSubscriber$.next(uploadedPercentage);
   }
 
   public upload({
     record,
     metadata,
+    externalKeys,
     options,
   }: {
     record: FileRecordQueryParams;
     metadata?: Metadata;
+    externalKeys?: ExternalKeys;
     options: FileUploadOptions;
   }): Observable<FileDetail> {
-    return this.createBlocks().pipe(
+    this.emitUploadProgress();
+
+    return this.emitBlocks().pipe(
       mergeMap((block) => {
-        return from(
-          this.uploadBlock(block, options.signal).pipe(
-            retry(options.maxRetries)
-          )
+        return this.uploadBlock(block, options.signal).pipe(
+          retry(options.maxRetries)
         );
       }, options.maxConcurrency),
       toArray(),
       switchMap((blocks: UploadProcessBlock[]) => {
         blocks.sort((a, b) => a.order - b.order);
 
-        return from(
-          this.createRecord({
-            blocks,
-            record,
-            metadata,
+        return from(this.getFileChecksum()).pipe(
+          mergeMap((checksum) => {
+            return this.createRecord({
+              blocks,
+              record,
+              metadata,
+              externalKeys,
+              checksum,
+            });
           })
         );
       })
@@ -179,29 +249,42 @@ class UploadProcess {
     blocks,
     record,
     metadata,
+    externalKeys,
+    checksum,
   }: {
     blocks: UploadProcessBlock[];
     record: FileRecordQueryParams;
     metadata?: Metadata;
-  }) {
-    const blocksData = blocks.map(({ hash, order }) => {
-      return {
-        hash,
-        order,
-      };
-    });
+    externalKeys?: ExternalKeys;
+    checksum: string;
+  }): Observable<FileDetail> {
+    const blocksJSON: string = JSON.stringify(
+      blocks.map(({ hash, order }) => {
+        return {
+          hash,
+          order,
+        };
+      })
+    );
 
-    let metadataJSON;
+    let metadataJSON: string | undefined;
+    let externalKeysJSON: string | undefined;
 
-    if (metadata) {
+    if (metadata != null) {
       metadataJSON = JSON.stringify(metadata);
+    }
+
+    if (externalKeys != null) {
+      externalKeysJSON = JSON.stringify(externalKeys);
     }
 
     return this.httpService.post<FileDetail>(
       `/api/v2/record-files/sidedrawer/sidedrawer-id/${this.sidedrawerId}/records/record-id/${this.recordId}/record-files`,
       {
         metadata: metadataJSON,
-        blocks: JSON.stringify(blocksData),
+        externalKeys: externalKeysJSON,
+        blocks: blocksJSON,
+        checksum,
       },
       {
         headers: {
@@ -216,6 +299,8 @@ class UploadProcess {
 const DEFAULT_FILE_UPLOAD_OPTIONS = {
   maxRetries: 2,
   maxConcurrency: 4,
+  isNodeEnvironment: false,
+  maxChunkSizeBytes: 4 * 1024 * 1024,
 } satisfies FileUploadOptions;
 
 /**
@@ -246,6 +331,7 @@ export default class Files {
       correlationId,
       fileExtension,
       metadata,
+      externalKeys,
       ...options
     } = params;
 
@@ -254,12 +340,15 @@ export default class Files {
       ...options,
     } satisfies FileUploadOptions;
 
-    const uploadProcess = new UploadProcess({
-      httpService: this.context.http,
-      sidedrawerId,
-      recordId,
-      file,
-    });
+    const uploadProcess = new UploadProcess(
+      {
+        httpService: this.context.http,
+        sidedrawerId,
+        recordId,
+        file,
+      },
+      optionsWithDefaults
+    );
 
     return uploadProcess.upload({
       record: {
@@ -272,7 +361,37 @@ export default class Files {
         fileExtension,
       },
       metadata,
+      externalKeys,
       options: optionsWithDefaults,
+    });
+  }
+
+  public download(
+    params: FileDownloadParams & Partial<FileDownloadOptions>
+  ): Observable<DownloadResponse> {
+    const {
+      sidedrawerId = isRequired("sidedrawerId"),
+      recordId = isRequired("recordId"),
+      fileNameWithExtension,
+      fileToken,
+      ...options
+    } = params;
+
+    const { responseType = isBrowserEnvironment() ? "blob" : "arraybuffer" } =
+      options;
+
+    let downloadUrl;
+
+    if (fileNameWithExtension) {
+      downloadUrl = `/api/v2/record-files/sidedrawer/sidedrawer-id/${sidedrawerId}/records/record-id/${recordId}/record-files/recordfile-name/${fileNameWithExtension}`;
+    } else if (fileToken) {
+      downloadUrl = `/api/v2/record-files/sidedrawer/sidedrawer-id/${sidedrawerId}/records/record-id/${recordId}/record-files/${fileToken}`;
+    } else {
+      return isRequired("fileNameWithExtension or fileToken");
+    }
+
+    return this.context.http.get<DownloadResponse>(downloadUrl, {
+      responseType,
     });
   }
 }
