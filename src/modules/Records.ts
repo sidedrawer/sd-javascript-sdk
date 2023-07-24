@@ -13,8 +13,8 @@ export interface SearchRecordsParams {
   recordSubtypeName?: string;
   recordSubtypeOther?: string;
   recordTypeId?: string;
-  locale: string;
-  displayInactive: boolean;
+  locale?: string;
+  displayInactive?: boolean;
   status?: string;
   externalKey?: string;
   externalKeyValue?: string;
@@ -33,7 +33,7 @@ export default class Records {
     displayInactive = false,
     locale = this.context.locale,
     ...extraParams
-  }: Partial<SearchRecordsParams>): ObservablePromise<Object[]> {
+  }: SearchRecordsParams): ObservablePromise<Object[]> {
     return this.context.http.get(
       `/api/v2/records/sidedrawer/sidedrawer-id/${sidedrawerId}/records`,
       {
