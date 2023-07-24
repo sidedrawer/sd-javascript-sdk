@@ -10,7 +10,7 @@
   "types": "./dist/index.node.d.ts",
   "sourceMap": false,
   "scripts": {
-    "prebuild": "npx rimraf ./dist/*",
+    "prebuild": "npx rimraf --glob ./dist/*",
     "build": "npx rollup --config",
     "test": "npx jest --runInBand --detectOpenHandles --coverage",
     "build-docs": "npx typedoc --options typedoc.json"
