@@ -81,13 +81,13 @@ Download File from a Record
 Browser:
 
 ```typescript
-const file: Blob = sd.files.download({
+const file: Blob = await sd.files.download({
     sidedrawerId: "...",
     recordId: "...",
     fileNameWithExtension: "...",
 });
 
-const file: Blob = sd.files.download({
+const file: Blob = await sd.files.download({
     sidedrawerId: "...",
     recordId: "...",
     fileToken: "...",
@@ -97,13 +97,13 @@ const file: Blob = sd.files.download({
 NodeJs
 
 ```typescript
-const file: ArrayBuffer = sd.files.download({
+const file: ArrayBuffer = await sd.files.download({
     sidedrawerId: "...",
     recordId: "...",
     fileNameWithExtension: "...",
 });
 
-const file: ReadableStream = sd.files.download({
+const file: ReadableStream = await sd.files.download({
     sidedrawerId: "...",
     recordId: "...",
     fileToken: "...",
