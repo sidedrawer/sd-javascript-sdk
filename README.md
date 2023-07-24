@@ -22,6 +22,10 @@ import SideDrawer from "@sidedrawer/sdk";
 const SideDrawer = require("@sidedrawer/sdk");
 ```
 
+```html
+<script type="text/javascript" src="/dist/index.browser.js"></script>
+```
+
 Create an instance of the SDK:
 
 ```javascript
