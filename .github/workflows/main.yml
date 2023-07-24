@@ -28,5 +28,8 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Size Limit
+        run: npm run size
+
       - name: Build Docs
         run: npm run build-docs
