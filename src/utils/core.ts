@@ -1,8 +1,10 @@
-declare var process: unknown;
-declare var require: unknown;
+export function isBrowserEnvironment(): boolean {
+  return process.env.NODE_ENV === "browser";
+}
 
-export const IS_NODE_ENVIRONMENT =
-  typeof process === "object" && typeof require === "function";
+export function isNodeEnvironment(): boolean {
+  return process.env.NODE_ENV !== "browser";
+}
 
 export function isRequired(name: string): any {
   throw new Error(`${name} is required.`);

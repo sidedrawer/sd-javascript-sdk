@@ -6,7 +6,7 @@ import Files from "./modules/Files";
 import Records from "./modules/Records";
 
 declare global {
-  var SideDrawer: any;
+  var SideDrawer: unknown;
 }
 
 export default class SideDrawer {

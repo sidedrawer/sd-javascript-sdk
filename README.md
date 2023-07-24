@@ -22,6 +22,10 @@ import SideDrawer from "@sidedrawer/sdk";
 const SideDrawer = require("@sidedrawer/sdk");
 ```
 
+```html
+<script type="text/javascript" src="/dist/index.browser.js"></script>
+```
+
 Create an instance of the SDK:
 
 ```javascript
@@ -57,16 +61,53 @@ const controller = new AbortController();
 const file = document.querySelector('#file-input').files[0];
 
 await sd.files.upload({
+  // params
   sidedrawerId: "...",
   recordId: "...",
-  file,
+  file, // Blob or ArrayBuffer
   fileName: "...",
   uploadTitle: "...",
   fileType: "...",
   fileExtension: "..",
+  // options
   signal: controller.signal,
   maxRetries: 1,
   maxConcurrency: 1
+});
+```
+
+Download File from a Record
+
+Browser:
+
+```typescript
+const file: Blob = sd.files.download({
+    sidedrawerId: "...",
+    recordId: "...",
+    fileNameWithExtension: "...",
+});
+
+const file: Blob = sd.files.download({
+    sidedrawerId: "...",
+    recordId: "...",
+    fileToken: "...",
+});
+```
+
+NodeJs
+
+```typescript
+const file: ArrayBuffer = sd.files.download({
+    sidedrawerId: "...",
+    recordId: "...",
+    fileNameWithExtension: "...",
+});
+
+const file: ReadableStream = sd.files.download({
+    sidedrawerId: "...",
+    recordId: "...",
+    fileToken: "...",
+    responseType: "stream"
 });
 ```
 
