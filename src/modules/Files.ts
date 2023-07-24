@@ -42,7 +42,6 @@ interface UploadProcessBlock {
 export interface FileUploadOptions extends Abortable {
   maxRetries: number;
   maxConcurrency: number;
-  isNodeEnvironment: boolean;
   progressSubscriber$?: Subject<number>;
   maxChunkSizeBytes: number;
 }
@@ -299,7 +298,6 @@ class UploadProcess {
 const DEFAULT_FILE_UPLOAD_OPTIONS = {
   maxRetries: 2,
   maxConcurrency: 4,
-  isNodeEnvironment: false,
   maxChunkSizeBytes: 4 * 1024 * 1024,
 } satisfies FileUploadOptions;
 

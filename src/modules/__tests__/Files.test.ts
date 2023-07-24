@@ -119,7 +119,6 @@ describe("Files", () => {
             testKey: "test value",
           },
           externalKeys: [{ key: "test", value: "test" }],
-          isNodeEnvironment: true,
           progressSubscriber$,
         })
         .subscribe({
@@ -189,7 +188,6 @@ describe("Files", () => {
           fileName: Date.now().toString(),
           uploadTitle: "test.txt",
           fileType: "document",
-          isNodeEnvironment: true,
         })
         .subscribe({
           next: (uploadResult: any) => {
@@ -280,7 +278,6 @@ describe("Files", () => {
           fileName: Date.now().toString(),
           uploadTitle: "test.txt",
           fileType: "document",
-          isNodeEnvironment: true,
         })
         .subscribe({
           next: (uploadResult: any) => {
@@ -331,7 +328,6 @@ describe("Files", () => {
         uploadTitle: "test.txt",
         fileType: "document",
         signal,
-        isNodeEnvironment: true,
       })
       .subscribe({
         error: (err: Error) => {
@@ -361,7 +357,6 @@ describe("Files", () => {
         fileName: Date.now().toString(),
         uploadTitle: "test.txt",
         fileType: "document",
-        isNodeEnvironment: true,
       })
       .subscribe({
         error: (err: Error) => {
@@ -383,7 +378,6 @@ describe("Files", () => {
       fileName: Date.now().toString(),
       uploadTitle: "test.txt",
       fileType: "document",
-      isNodeEnvironment: true,
     };
 
     const requiredParams = [
