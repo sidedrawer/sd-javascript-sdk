@@ -48,6 +48,10 @@ export default class AxiosHttpService {
             if (!signal.aborted) {
               controller.abort();
             }
+
+            if (!subscriber.closed) {
+              subscriber.error(signal.reason);
+            }
           };
 
           if (outerSignal.addEventListener) {
