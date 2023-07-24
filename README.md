@@ -52,7 +52,7 @@ const records = await sd.records.search({
 
 Upload File to Record
 
-```javascript
+```typescript
 const sd = new SideDrawer({
     accessToken: '...'
 });
