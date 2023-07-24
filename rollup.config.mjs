@@ -57,8 +57,8 @@ export default [
       }),
       commonjs({ extensions: [".ts"] }),
       replace({
-        "process.env.NODE_ENV": "browser",
-        preventAssignment: true,
+        "process.env.NODE_ENV": `"browser"`,
+        preventAssignment: false,
       }),
       terser(),
     ],

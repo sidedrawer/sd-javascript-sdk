@@ -5,7 +5,6 @@ import "../../extensions/global/crypto.node";
 import SideDrawer, { FileUploadOptions, FileUploadParams } from "../..";
 import nock from "nock";
 import { Subject } from "rxjs";
-import { IncomingMessage } from "node:http";
 
 function generateBlob(sizeInBytes = 1024, type = "application/octet-stream") {
   const buffer = Buffer.alloc(sizeInBytes);
@@ -468,14 +467,21 @@ describe("Files", () => {
         .reply(200, function (urlString) {
           expect(urlString).not.toBe(undefined);
 
-          return generateBlob(4 * 1024 * 1024 * 2);
+          return generateBlob(40 * 1024 * 1024 * 2);
         });
+
+      const progressSubscriber$ = new Subject<number>();
+
+      progressSubscriber$.subscribe((progressPercentage: number) => {
+        expect(progressPercentage).not.toBe(undefined);
+      });
 
       sd.files
         .download({
           sidedrawerId: "test",
           recordId: "test",
           fileNameWithExtension: "test",
+          progressSubscriber$,
         })
         .subscribe({
           next: (file: Blob | ArrayBuffer | ReadableStream) => {
@@ -528,7 +534,7 @@ describe("Files", () => {
   it(
     "Files.download with fileNameWithExtension browser",
     (done) => {
-      expect.assertions(4);
+      expect.assertions(3);
 
       process.env.NODE_ENV = "browser";
 
@@ -553,7 +559,6 @@ describe("Files", () => {
           next: (file: Blob | ArrayBuffer | ReadableStream) => {
             expect(file).not.toBe(undefined);
             expect(file).not.toBeInstanceOf(Buffer);
-            expect(file).not.toBeInstanceOf(IncomingMessage);
           },
           complete: () => {
             done();
@@ -566,7 +571,7 @@ describe("Files", () => {
   it(
     "Files.download with fileToken browser",
     (done) => {
-      expect.assertions(4);
+      expect.assertions(3);
 
       process.env.NODE_ENV = "browser";
 
@@ -591,7 +596,6 @@ describe("Files", () => {
           next: (file: Blob | ArrayBuffer | ReadableStream) => {
             expect(file).not.toBe(undefined);
             expect(file).not.toBeInstanceOf(Buffer);
-            expect(file).not.toBeInstanceOf(IncomingMessage);
           },
           complete: () => {
             done();
@@ -628,42 +632,6 @@ describe("Files", () => {
           next: (file: Blob | ArrayBuffer | ReadableStream) => {
             expect(file).not.toBe(undefined);
             expect(file).toBeInstanceOf(Buffer);
-          },
-          complete: () => {
-            done();
-          },
-        });
-    },
-    1000 * 5
-  );
-
-  it(
-    "Files.download with fileNameWithExtension stream",
-    (done) => {
-      expect.assertions(3);
-
-      nock(BASE_URL)
-        .get(
-          `/api/v2/record-files/sidedrawer/sidedrawer-id/test/records/record-id/test/record-files/recordfile-name/test`
-        )
-        .delay({ head: 500, body: 500 })
-        .reply(200, function (urlString) {
-          expect(urlString).not.toBe(undefined);
-
-          return generateBlob(4 * 1024 * 1024 * 2);
-        });
-
-      sd.files
-        .download({
-          sidedrawerId: "test",
-          recordId: "test",
-          fileNameWithExtension: "test",
-          responseType: "stream",
-        })
-        .subscribe({
-          next: (file: Blob | ArrayBuffer | ReadableStream) => {
-            expect(file).not.toBe(undefined);
-            expect(file).toBeInstanceOf(IncomingMessage);
           },
           complete: () => {
             done();

@@ -60,7 +60,7 @@ const sd = new SideDrawer({
 const controller = new AbortController();
 const file = document.querySelector('#file-input').files[0];
 
-const progressSubscriber$ = new Subject<number>();
+const progressSubscriber$ = new rxjs.Subject<number>();
 
 progressSubscriber$.subscribe((progressPercentage: number) => {
     console.log(`Upload progress: ${progressPercentage}`);
@@ -104,6 +104,11 @@ const file: Blob = await sd.files.download({
     sidedrawerId: "...",
     recordId: "...",
     fileToken: "...",
+    progressSubscriber$: {
+      next: (progressPercentage: number) => {
+          console.log(`Download progress: ${progressPercentage}`);
+      }
+    }
 });
 ```
 
