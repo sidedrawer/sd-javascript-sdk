@@ -55,7 +55,7 @@ export interface FileUploadParams extends FileRecordQueryParams {
   externalKeys?: ExternalKeys;
 }
 
-export type DownloadResponse = Blob | ArrayBuffer | ReadableStream;
+export type DownloadResponse = Blob | ArrayBuffer;
 
 export interface FileDownloadParams {
   sidedrawerId: string;
