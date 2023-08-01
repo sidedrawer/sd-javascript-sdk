@@ -15,11 +15,11 @@ npm install -S @sidedrawer/sdk
 Import SDK
 
 ```javascript
-import SideDrawer from "@sidedrawer/sdk";
+import { SideDrawer } from "@sidedrawer/sdk";
 ```
 
 ```javascript
-const SideDrawer = require("@sidedrawer/sdk");
+const { SideDrawer } = require("@sidedrawer/sdk");
 ```
 
 ```html
@@ -84,8 +84,8 @@ await sd.files.upload({
   progressSubscriber$,
   // options
   signal: controller.signal,
-  maxRetries: 1,
-  maxConcurrency: 1,
+  maxRetries: 2,
+  maxConcurrency: 4,
 });
 ```
 
@@ -120,13 +120,6 @@ const file: ArrayBuffer = await sd.files.download({
     recordId: "...",
     fileNameWithExtension: "...",
 });
-
-const file: ReadableStream = await sd.files.download({
-    sidedrawerId: "...",
-    recordId: "...",
-    fileToken: "...",
-    responseType: "stream"
-});
 ```
 
 Create an instance of single SDK module:
@@ -144,7 +137,7 @@ const records = new Records(context);
 or
 
 ```javascript
-const SideDrawer = require("@sidedrawer/sdk");
+const { SideDrawer } = require("@sidedrawer/sdk");
 
 const context = new SideDrawer.Context({
     accessToken: '...'
