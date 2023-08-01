@@ -47,5 +47,9 @@
       "path": "dist/index.browser.js",
       "limit": "100 kB"
     }
-  ]
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
 }
