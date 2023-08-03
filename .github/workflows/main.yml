@@ -2,6 +2,7 @@ name: CI
 on: [push]
 jobs:
   build:
+    timeout-minutes: 10
     name: Lint, Test and Build on Node ${{ matrix.node }} and ${{ matrix.os }}
 
     runs-on: ${{ matrix.os }}
