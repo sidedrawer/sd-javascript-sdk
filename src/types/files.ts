@@ -1,19 +1,39 @@
-/** Record File Detail */
-export interface FileDetail {
-  id: string;
-  fileName: string;
-  correlationId: string;
-  uploadDetail: string;
-  caption: string;
-  uploader: string;
-  url: string;
-  fileType: string;
+import { Metadata } from "./base";
+
+export interface FileBlock {
+  hash: string;
+  order: number;
 }
 
-export interface FileRecordQueryParams {
+/** Record File Detail */
+export interface RecordFileDetail {
+  _id: string;
+  fileToken: string;
+  format: string;
+  metadata: Metadata;
+  fileType: string;
+  uploader: string;
+  blocks: FileBlock[];
+  fileSize: number;
+  fileExtension: string;
+  uploadTitle: string;
+  caption: string;
+  fileName: string;
+  recordDetail: string;
+  sidedrawer: string;
+  updatedAt: string;
+  createdAt: string;
+  active: boolean;
+  quarantined: boolean;
+  cloudStorage: boolean;
+}
+
+export type FileType = "document" | "image" | "cloud";
+
+export interface RecordFileQueryParams {
   fileName: string;
   uploadTitle: string;
-  fileType: "image" | "document" | "cloud";
+  fileType: FileType;
   displayType?: string;
   envelopeId?: string;
   correlationId?: string;
