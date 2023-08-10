@@ -7,7 +7,7 @@
   "files": [
     "dist"
   ],
-  "types": "./dist/index.node.d.ts",
+  "types": "./dist/index.d.ts",
   "sourceMap": false,
   "scripts": {
     "prebuild": "npx rimraf --glob ./dist/*",

@@ -15,7 +15,7 @@ import Context from "../core/Context";
 import HttpService from "../core/HttpService";
 import { ExternalKeys, Metadata } from "../types/base";
 import { Abortable, ObservablePromise } from "../types/core";
-import { FileDetail, FileRecordQueryParams } from "../types/files";
+import { RecordFileDetail, RecordFileQueryParams } from "../types/files";
 import { isBrowserEnvironment, isRequired } from "../utils/core";
 import { generateHash } from "../utils/crypto";
 import { AxiosProgressEvent } from "axios";
@@ -47,7 +47,7 @@ export interface FileUploadOptions extends Abortable {
   maxChunkSizeBytes: number;
 }
 
-export interface FileUploadParams extends FileRecordQueryParams {
+export interface FileUploadParams extends RecordFileQueryParams {
   sidedrawerId: string;
   recordId: string;
   file: File | Blob;
@@ -55,7 +55,7 @@ export interface FileUploadParams extends FileRecordQueryParams {
   externalKeys?: ExternalKeys;
 }
 
-export type DownloadResponse = Blob | ArrayBuffer | ReadableStream;
+export type DownloadResponse = Blob | ArrayBuffer;
 
 export interface FileDownloadParams {
   sidedrawerId: string;
@@ -133,7 +133,7 @@ class UploadProcess {
     await this.emitBlock(subscriber, totalChunks, i + 1);
   }
 
-  private emitBlocks(): Observable<UploadProcessBlock> {
+  private emitBlocks(): ObservablePromise<UploadProcessBlock> {
     const self = this;
 
     return new Observable<UploadProcessBlock>(
@@ -150,7 +150,7 @@ class UploadProcess {
   private uploadBlock(
     uploadProcessBlock: UploadProcessBlock,
     signal?: AbortSignal
-  ): Observable<UploadProcessBlock> {
+  ): ObservablePromise<UploadProcessBlock> {
     const { sidedrawerId, recordId, uploadedBytesByBlockOrder } = this;
 
     uploadedBytesByBlockOrder[uploadProcessBlock.order] = 0;
@@ -223,11 +223,11 @@ class UploadProcess {
     externalKeys,
     options,
   }: {
-    record: FileRecordQueryParams;
+    record: RecordFileQueryParams;
     metadata?: Metadata;
     externalKeys?: ExternalKeys;
     options: FileUploadOptions;
-  }): Observable<FileDetail> {
+  }): ObservablePromise<RecordFileDetail> {
     this.emitUploadProgress();
 
     return this.emitBlocks().pipe(
@@ -242,7 +242,7 @@ class UploadProcess {
 
         return from(this.getFileChecksum()).pipe(
           mergeMap((checksum) => {
-            return this.createRecord({
+            return this.createRecordFile({
               blocks,
               record,
               metadata,
@@ -255,7 +255,7 @@ class UploadProcess {
     );
   }
 
-  private createRecord({
+  private createRecordFile({
     blocks,
     record,
     metadata,
@@ -263,11 +263,11 @@ class UploadProcess {
     checksum,
   }: {
     blocks: UploadProcessBlock[];
-    record: FileRecordQueryParams;
+    record: RecordFileQueryParams;
     metadata?: Metadata;
     externalKeys?: ExternalKeys;
     checksum: string;
-  }): Observable<FileDetail> {
+  }): ObservablePromise<RecordFileDetail> {
     const blocksJSON: string = JSON.stringify(
       blocks.map(({ hash, order }) => {
         return {
@@ -288,7 +288,7 @@ class UploadProcess {
       externalKeysJSON = JSON.stringify(externalKeys);
     }
 
-    return this.httpService.post<FileDetail>(
+    return this.httpService.post<RecordFileDetail>(
       `/api/v2/record-files/sidedrawer/sidedrawer-id/${this.sidedrawerId}/records/record-id/${this.recordId}/record-files`,
       {
         metadata: metadataJSON,
@@ -327,7 +327,7 @@ export default class Files {
    */
   public upload(
     params: FileUploadParams & Partial<FileUploadOptions>
-  ): ObservablePromise<FileDetail> {
+  ): ObservablePromise<RecordFileDetail> {
     const {
       sidedrawerId = isRequired("sidedrawerId"),
       recordId = isRequired("recordId"),
@@ -377,7 +377,7 @@ export default class Files {
 
   public download(
     params: FileDownloadParams & Partial<FileDownloadOptions>
-  ): Observable<DownloadResponse> {
+  ): ObservablePromise<DownloadResponse> {
     const {
       sidedrawerId = isRequired("sidedrawerId"),
       recordId = isRequired("recordId"),

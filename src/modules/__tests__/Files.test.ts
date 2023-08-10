@@ -484,7 +484,7 @@ describe("Files", () => {
           progressSubscriber$,
         })
         .subscribe({
-          next: (file: Blob | ArrayBuffer | ReadableStream) => {
+          next: (file: Blob | ArrayBuffer) => {
             expect(file).not.toBe(undefined);
             expect(file).toBeInstanceOf(Buffer);
           },
@@ -519,7 +519,7 @@ describe("Files", () => {
           fileToken: "test",
         })
         .subscribe({
-          next: (file: Blob | ArrayBuffer | ReadableStream) => {
+          next: (file: Blob | ArrayBuffer) => {
             expect(file).not.toBe(undefined);
             expect(file).toBeInstanceOf(Buffer);
           },
@@ -556,7 +556,7 @@ describe("Files", () => {
           fileNameWithExtension: "test",
         })
         .subscribe({
-          next: (file: Blob | ArrayBuffer | ReadableStream) => {
+          next: (file: Blob | ArrayBuffer) => {
             expect(file).not.toBe(undefined);
             expect(file).not.toBeInstanceOf(Buffer);
           },
@@ -593,7 +593,7 @@ describe("Files", () => {
           fileToken: "test",
         })
         .subscribe({
-          next: (file: Blob | ArrayBuffer | ReadableStream) => {
+          next: (file: Blob | ArrayBuffer) => {
             expect(file).not.toBe(undefined);
             expect(file).not.toBeInstanceOf(Buffer);
           },
@@ -629,7 +629,7 @@ describe("Files", () => {
           responseType: "arraybuffer",
         })
         .subscribe({
-          next: (file: Blob | ArrayBuffer | ReadableStream) => {
+          next: (file: Blob | ArrayBuffer) => {
             expect(file).not.toBe(undefined);
             expect(file).toBeInstanceOf(Buffer);
           },
