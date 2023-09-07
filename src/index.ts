@@ -1,21 +1,37 @@
-import {SideDrawerModule} from "./modules/sidedrawer.module";
-import {Environment} from "./models/environment.enum";
-import {AccountModule} from "./modules/account.module";
-import {RecordsModule} from "./modules/records.module";
-import {PlanRequestsModule} from "./modules/plan-requests.module";
-import {FilesModule} from "./modules/files.module";
-import {NetworksModule} from "./modules/networks.module";
+import "./extensions/rxjs/internal/Observable";
 
-export class SdSdk {
-    public SideDrawer = new SideDrawerModule(this.environment);
-    public Account = new AccountModule(this.environment);
-    public Records = new RecordsModule(this.environment);
-    public PlanRequests = new PlanRequestsModule(this.environment);
-    public Files = new FilesModule(this.environment);
-    public Networks = new NetworksModule(this.environment);
+import Context, { SideDrawerConfig } from "./core/Context";
 
-    constructor(
-        private environment: Environment = Environment.production,
-    ) {
-    }
+import Files from "./modules/Files";
+import Records from "./modules/Records";
+
+declare global {
+  var SideDrawer: unknown;
 }
+
+export default class SideDrawer {
+  public static Context = Context;
+  public static Records = Records;
+  public static Files = Files;
+
+  public records: Records;
+  public files: Files;
+
+  constructor(config: SideDrawerConfig) {
+    const context = new Context(config);
+
+    this.records = new Records(context);
+    this.files = new Files(context);
+  }
+}
+
+globalThis.SideDrawer = SideDrawer;
+
+export * from "./core/Context";
+export * from "./modules/Files";
+export * from "./modules/Records";
+export * from "./types/base";
+export * from "./types/core";
+export * from "./types/files";
+export * from "./types/records";
+export { SideDrawer };

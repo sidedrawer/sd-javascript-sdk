@@ -1,8 +1,0 @@
-{
-
-    "apiRecord": "https://records-api-dev.sidedrawerdev.com/api/v1/",
-	"apiNetwork": "https://networks-api-dev.sidedrawerdev.com/api/v1/",
-	"apiUser": "https://user-api-dev.sidedrawerdev.com/api/v1/",
-    "apiIdentifier": "https://user-api-stg.sidedrawer.com",
-    "auth0Domain": "acc-stg.sidedrawer.com"
-}
