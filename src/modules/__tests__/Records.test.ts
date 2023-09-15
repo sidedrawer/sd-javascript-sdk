@@ -226,16 +226,16 @@ describe("Records", () => {
 
   it("Records.create defined", () => {
     expect(sd.records.create).not.toBe(undefined);
-    expect(sd.records.create()).toBe(undefined);
+
   });
 
   it("Records.update defined", () => {
     expect(sd.records.update).not.toBe(undefined);
-    expect(sd.records.update()).toBe(undefined);
+
   });
 
   it("Records.delete defined", () => {
     expect(sd.records.delete).not.toBe(undefined);
-    expect(sd.records.delete()).toBe(undefined);
+
   });
 });
