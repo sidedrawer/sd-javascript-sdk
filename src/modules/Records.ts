@@ -21,6 +21,54 @@ export interface SearchRecordsParams {
   sidedrawerId: string;
 }
 
+export interface DeleteRecordParams {
+
+  sidedrawerId: string;
+  recordId: string;
+}
+
+export interface UpdateRecordParams {
+  sidedrawerId: string;
+  recordId: string;
+  name: string;
+  description: string;
+  uniqueReference?: string;
+  storageLocation?: string;
+  recordSubtypeName: string;
+  recordSubtypeOther?: string;
+  recordTypeName?: string;
+  editable?: boolean;
+  recordDetails?: {};
+  status?: string;
+  externalKeys?: [
+    {
+      key: string;
+      value: string
+    }
+  ]
+}
+
+export interface CreateRecordParams {
+  sidedrawerId: string;
+  recordId: string;
+  name: string;
+  description: string;
+  uniqueReference?: string;
+  storageLocation?: string;
+  recordSubtypeName: string;
+  recordSubtypeOther?: string;
+  recordTypeName?: string;
+  editable?: boolean;
+  recordDetails?: {};
+  status?: string;
+  externalKeys?: [
+    {
+      key: string;
+      value: string
+    }
+  ]
+}
+
 export default class Records {
   private context: Context;
 
@@ -47,9 +95,34 @@ export default class Records {
   }
 
   public obtain() {}
-  public create() {}
-  public update() {}
-  public delete() {}
+
+  public create({
+    sidedrawerId = isRequired("sidedrawerId"),
+    recordId = isRequired("recordId"),
+    ...extraParams
+  }: CreateRecordParams): ObservablePromise<Object> {
+
+    return this.context.http.post(`/api/v1/records/sidedrawer/sidedrawer-id/${sidedrawerId}/records`, extraParams);
+  }
+
+  public update({
+    sidedrawerId = isRequired("sidedrawerId"),
+    recordId = isRequired("recordId"),
+    ...extraParams
+  }: UpdateRecordParams): ObservablePromise<Object> {
+
+    return this.context.http.put(`/api/v1/records/sidedrawer/sidedrawer-id/${sidedrawerId}/records/record-id/${recordId}`, extraParams);
+  }
+
+
+  public delete({
+    sidedrawerId = isRequired("sidedrawerId"),
+    recordId = isRequired("recordId")
+  }: DeleteRecordParams): ObservablePromise<Object> {
+
+    return this.context.http.delete(`/api/v1/records/sidedrawer/sidedrawer-id/${sidedrawerId}/records/record-id/${recordId}`);
+  }
+
 }
 
 export { Records };

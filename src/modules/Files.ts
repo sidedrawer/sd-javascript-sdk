@@ -64,6 +64,13 @@ export interface FileDownloadParams {
   fileToken?: string;
 }
 
+export interface FileDeleteParams {
+  sidedrawerId: string;
+  recordId: string;
+  fileNameWithExtension?: string;
+  fileToken?: string;
+}
+
 export type FileDownloadResponseType = "blob" | "arraybuffer";
 
 export interface FileDownloadOptions {
@@ -323,6 +330,29 @@ export default class Files {
   }
 
   /**
+   * Delete file for a record.
+   */
+  public delete({
+    sidedrawerId = isRequired("sidedrawerId"),
+    recordId = isRequired("recordId"),
+    fileNameWithExtension,
+    fileToken
+  }: FileDeleteParams): ObservablePromise<Object> {
+
+    let deleteloadUrl;
+    if (fileToken) {
+      deleteloadUrl = `/api/v2/record-files/sidedrawer/sidedrawer-id/${sidedrawerId}/records/record-id/${recordId}/record-files/${fileToken}`;
+    }
+    else if (fileNameWithExtension) {
+      deleteloadUrl = `/api/v1/record-files/sidedrawer/sidedrawer-id/${sidedrawerId}/records/record-id/${recordId}/record-files/${fileNameWithExtension}`;
+    } else {
+      return isRequired("fileNameWithExtension or fileToken");
+    }
+
+    return this.context.http.delete(deleteloadUrl);
+  }
+
+  /**
    * Upload file to a record.
    */
   public upload(
@@ -392,11 +422,11 @@ export default class Files {
     } = options;
 
     let downloadUrl;
-
-    if (fileNameWithExtension) {
-      downloadUrl = `/api/v2/record-files/sidedrawer/sidedrawer-id/${sidedrawerId}/records/record-id/${recordId}/record-files/recordfile-name/${fileNameWithExtension}`;
-    } else if (fileToken) {
+    if (fileToken) {
       downloadUrl = `/api/v2/record-files/sidedrawer/sidedrawer-id/${sidedrawerId}/records/record-id/${recordId}/record-files/${fileToken}`;
+    }
+    else if (fileNameWithExtension) {
+      downloadUrl = `/api/v2/record-files/sidedrawer/sidedrawer-id/${sidedrawerId}/records/record-id/${recordId}/record-files/recordfile-name/${fileNameWithExtension}`;
     } else {
       return isRequired("fileNameWithExtension or fileToken");
     }
