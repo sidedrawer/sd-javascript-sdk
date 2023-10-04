@@ -177,7 +177,7 @@ describe("core", () => {
         error: (err: Error) => {
           expect(err).not.toEqual(undefined);
           expect(err.message).not.toEqual(undefined);
-          expect(["aborted", "canceled"]).toContain(err.message.toLowerCase());
+          expect(err.message.toLowerCase()).toContain("aborted");
 
           done();
         },
@@ -185,8 +185,6 @@ describe("core", () => {
 
     setTimeout(() => {
       controller.abort();
-
-      done();
     }, 100);
   }, 3000);
 
