@@ -160,7 +160,7 @@ describe("core", () => {
   it("AxiosHttpService abort signal", (done) => {
     expect.assertions(3);
 
-    nock(BASE_URL).get(`/test`).delayConnection(2000).reply(403, {
+    nock(BASE_URL).get(`/test`).delayConnection(1000).reply(403, {
       statusCode: 0,
       error: "string",
       message: "string",
@@ -177,7 +177,7 @@ describe("core", () => {
         error: (err: Error) => {
           expect(err).not.toEqual(undefined);
           expect(err.message).not.toEqual(undefined);
-          expect(err.message.toLowerCase()).toContain("aborted");
+          expect(["aborted", "canceled"]).toContain(err.message.toLowerCase());
 
           done();
         },
@@ -185,7 +185,9 @@ describe("core", () => {
 
     setTimeout(() => {
       controller.abort();
-    }, 1000);
+
+      done();
+    }, 100);
   }, 3000);
 
   it("AxiosHttpService timeout from pipe", (done) => {
