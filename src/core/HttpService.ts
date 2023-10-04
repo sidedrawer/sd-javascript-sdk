@@ -11,4 +11,4 @@ export class HttpServiceError extends Error {
   }
 }
 
-export default class HttpService extends AxiosHttpService {}
+export default AxiosHttpService;
