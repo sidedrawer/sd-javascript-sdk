@@ -393,10 +393,10 @@ export default class Files {
 
     let downloadUrl;
 
-    if (fileNameWithExtension) {
-      downloadUrl = `/api/v2/record-files/sidedrawer/sidedrawer-id/${sidedrawerId}/records/record-id/${recordId}/record-files/recordfile-name/${fileNameWithExtension}`;
-    } else if (fileToken) {
+    if (fileToken) {
       downloadUrl = `/api/v2/record-files/sidedrawer/sidedrawer-id/${sidedrawerId}/records/record-id/${recordId}/record-files/${fileToken}`;
+    } else if (fileNameWithExtension) {
+      downloadUrl = `/api/v2/record-files/sidedrawer/sidedrawer-id/${sidedrawerId}/records/record-id/${recordId}/record-files/recordfile-name/${fileNameWithExtension}`;
     } else {
       return isRequired("fileNameWithExtension or fileToken");
     }

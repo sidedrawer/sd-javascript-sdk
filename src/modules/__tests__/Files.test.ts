@@ -532,6 +532,42 @@ describe("Files", () => {
   );
 
   it(
+    "Files.download with fileToken priority",
+    (done) => {
+      expect.assertions(3);
+
+      nock(BASE_URL)
+        .get(
+          `/api/v2/record-files/sidedrawer/sidedrawer-id/test/records/record-id/test/record-files/test`
+        )
+        .delay({ head: 500, body: 500 })
+        .reply(200, function (urlString) {
+          expect(urlString).not.toBe(undefined);
+
+          return generateBlob(4 * 1024 * 1024 * 2);
+        });
+
+      sd.files
+        .download({
+          sidedrawerId: "test",
+          recordId: "test",
+          fileToken: "test",
+          fileNameWithExtension: "testbad"
+        })
+        .subscribe({
+          next: (file: Blob | ArrayBuffer) => {
+            expect(file).not.toBe(undefined);
+            expect(file).toBeInstanceOf(Buffer);
+          },
+          complete: () => {
+            done();
+          },
+        });
+    },
+    1000 * 5
+  );
+
+  it(
     "Files.download with fileNameWithExtension browser",
     (done) => {
       expect.assertions(3);

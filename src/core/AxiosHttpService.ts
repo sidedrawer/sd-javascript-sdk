@@ -7,13 +7,15 @@ import axios, {
 } from "axios";
 import { Observable, of, switchMap } from "rxjs";
 
+import { HttpServiceError } from "./HttpService";
+
 const privateScope = new WeakMap();
 
 export default class AxiosHttpService {
   /**
    * @param config Axios configurations
    */
-  constructor(config: CreateAxiosDefaults) {
+  constructor(config?: CreateAxiosDefaults) {
     const axiosInstance: AxiosInstance = axios.create(config);
 
     privateScope.set(this, {
@@ -79,7 +81,14 @@ export default class AxiosHttpService {
         .catch((err: AxiosError) => {
           abortable = false;
 
-          subscriber.error(new Error(err.message));
+          subscriber.error(
+            new HttpServiceError(
+              err.message,
+              err.code,
+              err.request,
+              err.response
+            )
+          );
         });
 
       return () => {
