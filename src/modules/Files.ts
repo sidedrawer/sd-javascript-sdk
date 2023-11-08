@@ -396,7 +396,7 @@ export default class Files {
     if (fileToken) {
       downloadUrl = `/api/v2/record-files/sidedrawer/sidedrawer-id/${sidedrawerId}/records/record-id/${recordId}/record-files/${fileToken}`;
     } else if (fileNameWithExtension) {
-      downloadUrl = `/api/v2/record-files/sidedrawer/sidedrawer-id/${sidedrawerId}/records/record-id/${recordId}/record-files/recordfile-name/${fileNameWithExtension}`;
+      downloadUrl = `/api/v1/record-files/sidedrawer/sidedrawer-id/${sidedrawerId}/records/record-id/${recordId}/record-files/recordfile-name/${fileNameWithExtension}`;
     } else {
       return isRequired("fileNameWithExtension or fileToken");
     }
