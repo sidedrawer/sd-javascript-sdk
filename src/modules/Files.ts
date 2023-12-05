@@ -294,13 +294,15 @@ class UploadProcess {
         metadata: metadataJSON,
         externalKeys: externalKeysJSON,
         blocks: blocksJSON,
-        checksum,
       },
       {
         headers: {
           "Content-Type": "multipart/form-data",
         },
-        params: record,
+        params: {
+          record,
+          checksum,
+        },
       }
     );
   }
