@@ -300,7 +300,7 @@ class UploadProcess {
           "Content-Type": "multipart/form-data",
         },
         params: {
-          record,
+          ...record,
           checksum,
         },
       }
