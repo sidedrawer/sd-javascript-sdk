@@ -301,7 +301,7 @@ class UploadProcess {
         },
         params: {
           ...record,
-          checksum,
+          checkSum: checksum,
         },
       }
     );
