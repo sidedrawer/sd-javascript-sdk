@@ -167,12 +167,13 @@ class UploadProcess {
       };
     }
 
+    const formData = new FormData();
+    formData.append("block", new Blob([uploadProcessBlock.block]));
+
     return this.httpService
       .post<UploadResponse>(
         `/api/v2/blocks/sidedrawer/sidedrawer-id/${sidedrawerId}/records/record-id/${recordId}/upload`,
-        {
-          block: uploadProcessBlock.block,
-        },
+        formData,
         {
           params: {
             order: uploadProcessBlock.order,
