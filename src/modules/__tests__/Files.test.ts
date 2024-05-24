@@ -461,7 +461,7 @@ describe("Files", () => {
 
       nock(BASE_URL)
         .get(
-          `/api/v2/record-files/sidedrawer/sidedrawer-id/test/records/record-id/test/record-files/recordfile-name/test`
+          `/api/v1/record-files/sidedrawer/sidedrawer-id/test/records/record-id/test/record-files/test`
         )
         .delay({ head: 500, body: 500 })
         .reply(200, function (urlString) {
@@ -552,7 +552,7 @@ describe("Files", () => {
           sidedrawerId: "test",
           recordId: "test",
           fileToken: "test",
-          fileNameWithExtension: "testbad"
+          fileNameWithExtension: "testbad",
         })
         .subscribe({
           next: (file: Blob | ArrayBuffer) => {
