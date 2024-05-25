@@ -1,8 +1,26 @@
+import { webcrypto } from "crypto";
+import { isNodeEnvironment } from "./core";
+
+export async function getWebCrypto(): Promise<webcrypto.Crypto | Crypto> {
+  let crypto;
+
+  if (isNodeEnvironment()) {
+    const { webcrypto } = await import("node:crypto");
+
+    crypto = webcrypto;
+  } else {
+    crypto = globalThis.crypto;
+  }
+
+  return crypto;
+}
+
 export async function generateHash(
   arrayBuffer: ArrayBuffer,
   algorithm: AlgorithmIdentifier = "SHA-256"
 ): Promise<string> {
-  const hashAsArrayBuffer: ArrayBuffer = await crypto.subtle.digest(
+  const webCrypto = await getWebCrypto();
+  const hashAsArrayBuffer: ArrayBuffer = await webCrypto.subtle.digest(
     algorithm,
     arrayBuffer
   );
