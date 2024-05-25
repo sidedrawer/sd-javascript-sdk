@@ -9,7 +9,7 @@ export async function getWebCrypto(): Promise<webcrypto.Crypto | Crypto> {
 
     crypto = webcrypto;
   } else {
-    crypto = globalThis.crypto;
+    crypto = window.crypto;
   }
 
   return crypto;

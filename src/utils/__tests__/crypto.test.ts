@@ -10,6 +10,12 @@ async function generateArrayBuffer(sizeInBytes = 1024): Promise<ArrayBuffer> {
 describe("utils", () => {
   describe("crypto", () => {
     it("getWebCrypto for browser", async () => {
+      Object.defineProperty(global, "window", {
+        value: {
+          crypto: {}
+        }
+      });
+
       process.env.NODE_ENV = "browser";
       
       const webCrypto = await getWebCrypto();
