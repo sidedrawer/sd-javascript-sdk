@@ -12,7 +12,7 @@
   "scripts": {
     "prebuild": "npx rimraf --glob ./dist/*",
     "build": "npx rollup --config",
-    "test": "npx jest --runInBand --detectOpenHandles --coverage",
+    "test": "npx jest --clearCache && npx jest --runInBand --detectOpenHandles --coverage",
     "build-docs": "npx typedoc --options typedoc.json",
     "size": "npx size-limit"
   },
@@ -30,6 +30,7 @@
     "@types/jest": "^29.5.10",
     "@types/node": "^20.10.3",
     "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0",
     "nock": "^13.4.0",
     "rimraf": "^5.0.5",
     "rollup": "^3.29.4",
