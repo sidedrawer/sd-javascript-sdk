@@ -1,6 +1,4 @@
-import "../../extensions/global/crypto.node";
-
-import { generateHash } from "../crypto";
+import { getWebCrypto, generateHash } from "../crypto";
 
 async function generateArrayBuffer(sizeInBytes = 1024): Promise<ArrayBuffer> {
   const buffer = Buffer.alloc(sizeInBytes);
@@ -11,6 +9,23 @@ async function generateArrayBuffer(sizeInBytes = 1024): Promise<ArrayBuffer> {
 
 describe("utils", () => {
   describe("crypto", () => {
+    it("getWebCrypto for browser", async () => {
+      process.env.NODE_ENV = "browser";
+      
+      const webCrypto = await getWebCrypto();
+
+      expect(webCrypto).not.toEqual(undefined);
+    });
+
+    
+    it("getWebCrypto for Node", async () => {
+      process.env.NODE_ENV = "node";
+
+      const webCrypto = await getWebCrypto();
+
+      expect(webCrypto).not.toEqual(undefined);
+    });
+
     it("generateHash", async () => {
       const arrayBuffer: ArrayBuffer = await generateArrayBuffer();
 
