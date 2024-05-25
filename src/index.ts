@@ -19,12 +19,12 @@ export default class SideDrawer {
   public context: Context;
 
   constructor(config: SideDrawerConfig) {
-    this.context = new Context(config);
-    this.records = new Records(this.context);
-    this.files = new Files(this.context);
+    const context = new Context(config);
+
+    this.context = context;
+    this.records = new Records(context);
+    this.files = new Files(context);
   }
-
-
 }
 
 globalThis.SideDrawer = SideDrawer;
