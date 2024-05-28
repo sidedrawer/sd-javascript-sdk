@@ -57,6 +57,10 @@ describe("Records", () => {
     accessToken: "test",
   });
 
+  nock(BASE_URL)
+    .options((uri) => uri != null)
+    .reply(200);
+
   it("Records.search defined", () => {
     expect(sd.records.obtain).not.toBe(undefined);
   });

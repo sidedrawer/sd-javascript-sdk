@@ -414,7 +414,7 @@ export default class Files {
           progressSubscriber$ !== undefined &&
           progressEvent.total !== undefined
         ) {
-          const progress = Math.round(
+          const progress = Math.floor(
             (progressEvent.loaded * 100) / progressEvent.total
           );
 
