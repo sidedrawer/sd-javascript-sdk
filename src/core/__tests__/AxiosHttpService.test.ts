@@ -191,10 +191,12 @@ describe("core", () => {
   it("AxiosHttpService timeout from pipe", (done) => {
     expect.assertions(3);
 
-    nock(BASE_URL).get(`/test`).delayConnection(2000).reply(403, {
-      statusCode: 0,
-      error: "string",
-      message: "string",
+    nock(BASE_URL).get(`/test`).delayConnection(2000).reply(403, () => {      
+      return {
+        statusCode: 0,
+        error: "string",
+        message: "string",
+      };
     });
 
     axiosHttpService
@@ -206,8 +208,10 @@ describe("core", () => {
           expect(err.message).not.toEqual(undefined);
           expect(err.message.toLowerCase()).toContain("timeout");
 
-          done();
+          setTimeout(() => {
+            done();
+          }, 2000);
         }
       });
-  }, 4000);
+  }, 5000);
 });

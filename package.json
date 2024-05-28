@@ -12,7 +12,7 @@
   "scripts": {
     "prebuild": "npx rimraf --glob ./dist/*",
     "build": "npx rollup --config",
-    "test": "npx jest --runInBand --detectOpenHandles --coverage",
+    "test": "npx jest --clearCache && npx jest --runInBand --detectOpenHandles --coverage",
     "build-docs": "npx typedoc --options typedoc.json",
     "size": "npx size-limit"
   },
