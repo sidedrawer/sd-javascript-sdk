@@ -6,13 +6,13 @@ export interface SearchRecordsParams {
   limit?: number;
   startingAfter?: string;
   endingBefore?: string;
-  totalCount?: number;
   name?: string;
   uniqueReference?: string;
   recordTypeName?: string;
   recordSubtypeName?: string;
-  recordSubtypeOther?: string;
+  recordSubtypeOtherName?: string;
   recordTypeId?: string;
+  recordSubtypeId?: string;
   locale?: string;
   displayInactive?: boolean;
   status?: string;
