@@ -70,7 +70,11 @@ describe("Records", () => {
         locale: "en-CA",
         displayInactive: false,
       })
-      .reply(200, [RECORD_EXAMPLE]);
+      .reply(200, {
+        data: [RECORD_EXAMPLE],
+        hasMore: false,
+        nextPage: null,
+      });
 
     sd.records
       .search({
@@ -96,7 +100,11 @@ describe("Records", () => {
         locale: "en-CA",
         displayInactive: false,
       })
-      .reply(200, [RECORD_EXAMPLE]);
+      .reply(200, {
+        data: [RECORD_EXAMPLE],
+        hasMore: false,
+        nextPage: null,
+      });
 
     sd.records
       .search({
@@ -120,7 +128,11 @@ describe("Records", () => {
         locale: "en-CA",
         displayInactive: false,
       })
-      .reply(200, [RECORD_EXAMPLE]);
+      .reply(200, {
+        data: [RECORD_EXAMPLE],
+        hasMore: false,
+        nextPage: null,
+      });
 
     const records = await sd.records.search({
       locale: "en-CA",
