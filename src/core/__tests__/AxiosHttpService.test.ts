@@ -1,4 +1,4 @@
-import { timeout } from "rxjs";
+import { take, timeout } from "rxjs";
 import AxiosHttpService from "../AxiosHttpService";
 import nock from "nock";
 
@@ -207,7 +207,100 @@ describe("core", () => {
           expect(err.message.toLowerCase()).toContain("timeout");
 
           done();
-        }
+        },
       });
   }, 4000);
+
+  it("AxiosHttpService.getWithPagination subscribe", (done) => {
+    expect.assertions(9);
+
+    nock(BASE_URL)
+      .get("/test")
+      .query(true)
+      .times(5)
+      .reply(200, function (urlString) {
+        const url = new URL(`${BASE_URL}${urlString}`);
+        const limit = parseInt(url.searchParams.get("limit") ?? "20");
+        const page = parseInt(url.searchParams.get("page") ?? "1");
+
+        expect(limit).toEqual(20);
+
+        const data = Array.from(
+          {
+            length: limit > 20 ? limit : 20,
+          },
+          (_, index) => {
+            return {
+              name: `Element ${index + 1 + 20 * (page - 1)}`,
+            };
+          }
+        );
+
+        url.searchParams.set("page", `${page + 1}`);
+
+        return {
+          data,
+          hasMore: page <= 10,
+          nextPage: url.toString(),
+        };
+      });
+
+    axiosHttpService
+      .getWithPagination("/test", {
+        params: {
+          limit: 50,
+        },
+      })
+      .pipe(take(2))
+      .subscribe({
+        next: (response: any) => {
+          expect(response).not.toEqual(undefined);
+          expect(response.length).toEqual(50);
+        },
+        complete: () => {
+          done();
+        },
+      });
+  });
+
+  it("AxiosHttpService.getWithPagination response format error", (done) => {
+    expect.assertions(2);
+
+    nock(BASE_URL)
+      .get("/test")
+      .query(true)
+      .times(1)
+      .reply(200, function () {
+        return {};
+      });
+
+    axiosHttpService.getWithPagination("/test").subscribe({
+      error: (err: Error) => {
+        expect(err).not.toEqual(undefined);
+        expect(err).toBeInstanceOf(Error);
+
+        done();
+      },
+    });
+  });
+
+  it("AxiosHttpService.getWithPagination http error", (done) => {
+    expect.assertions(3);
+
+    nock(BASE_URL).get(`/test`).reply(500, {
+      statusCode: 0,
+      error: "string",
+      message: "string",
+    });
+
+    axiosHttpService.getWithPagination("/test").subscribe({
+      error: (err: Error) => {
+        expect(err).not.toEqual(undefined);
+        expect(err).toBeInstanceOf(Error);
+        expect(err.message).toContain("500");
+
+        done();
+      },
+    });
+  });
 });
