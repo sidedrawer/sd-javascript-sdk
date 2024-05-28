@@ -149,6 +149,89 @@ describe("Records", () => {
     expect(records.length).toEqual(1);
   });
 
+  it("Records.search pagination", (done) => {
+    expect.assertions(6);
+
+    nock(BASE_URL)
+      .get(`/api/v2/records/sidedrawer/sidedrawer-id/test/records`)
+      .query({
+        locale: "en-CA",
+        displayInactive: false,
+        name: "test",
+      })
+      .reply(200, {
+        data: Array(20).fill(RECORD_EXAMPLE),
+        hasMore: true,
+        nextPage: `${BASE_URL}/api/v2/records/sidedrawer/sidedrawer-id/test/records?page=2`,
+      });
+
+    nock(BASE_URL)
+      .get(`/api/v2/records/sidedrawer/sidedrawer-id/test/records`)
+      .query({
+        page: 2,
+      })
+      .reply(200, {
+        data: Array(20).fill(RECORD_EXAMPLE),
+        hasMore: false,
+        nextPage: null,
+      });
+
+    sd.records
+      .search({
+        sidedrawerId: "test",
+        name: "test",
+      })
+      .subscribe({
+        next: (records: any) => {
+          expect(records).not.toEqual(undefined);
+          expect(records).toBeInstanceOf(Array);
+          expect(records.length).toEqual(20);
+        },
+        complete: () => {
+          done();
+        },
+      });
+  }, 1500);
+
+  it("await Records.search pagination", async () => {
+    expect.assertions(3);
+
+    nock(BASE_URL)
+      .get(`/api/v2/records/sidedrawer/sidedrawer-id/test/records`)
+      .query({
+        locale: "en-CA",
+        displayInactive: false,
+        name: "test",
+        limit: 20
+      })
+      .reply(200, {
+        data: Array(20).fill(RECORD_EXAMPLE),
+        hasMore: true,
+        nextPage: `${BASE_URL}/api/v2/records/sidedrawer/sidedrawer-id/test/records?page=2`,
+      });
+
+    nock(BASE_URL)
+      .get(`/api/v2/records/sidedrawer/sidedrawer-id/test/records`)
+      .query({
+        page: 2,
+      })
+      .reply(200, {
+        data: Array(20).fill(RECORD_EXAMPLE),
+        hasMore: false,
+        nextPage: null,
+      });
+
+    const records = await sd.records.search({
+      sidedrawerId: "test",
+      name: "test",
+      limit: 30
+    });
+
+    expect(records).not.toEqual(undefined);
+    expect(records).toBeInstanceOf(Array);
+    expect(records.length).toEqual(30);
+  });
+
   it("Records.searchRecords fail", async () => {
     expect.assertions(3);
 
