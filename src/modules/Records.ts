@@ -34,7 +34,7 @@ export default class Records {
     locale = this.context.locale,
     ...extraParams
   }: SearchRecordsParams): ObservablePromise<Object[]> {
-    return this.context.http.get(
+    return this.context.http.getWithPagination(
       `/api/v2/records/sidedrawer/sidedrawer-id/${sidedrawerId}/records`,
       {
         params: {
