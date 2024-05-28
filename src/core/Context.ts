@@ -24,6 +24,10 @@ export default class Context {
    * @param config SideDrawer SDK configurations
    */
   constructor(config: SideDrawerConfig) {
+    this.refresh(config);
+  }
+
+  public refresh(config: SideDrawerConfig) {
     const configWithDefaults = {
       ...CONFIG_DEFAULTS,
       ...config,

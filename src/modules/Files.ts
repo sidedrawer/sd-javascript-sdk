@@ -167,12 +167,13 @@ class UploadProcess {
       };
     }
 
+    const formData = new FormData();
+    formData.append("block", new Blob([uploadProcessBlock.block]));
+
     return this.httpService
       .post<UploadResponse>(
         `/api/v2/blocks/sidedrawer/sidedrawer-id/${sidedrawerId}/records/record-id/${recordId}/upload`,
-        {
-          block: uploadProcessBlock.block,
-        },
+        formData,
         {
           params: {
             order: uploadProcessBlock.order,
@@ -294,13 +295,15 @@ class UploadProcess {
         metadata: metadataJSON,
         externalKeys: externalKeysJSON,
         blocks: blocksJSON,
-        checksum,
       },
       {
         headers: {
           "Content-Type": "multipart/form-data",
         },
-        params: record,
+        params: {
+          ...record,
+          checkSum: checksum,
+        },
       }
     );
   }
@@ -396,7 +399,7 @@ export default class Files {
     if (fileToken) {
       downloadUrl = `/api/v2/record-files/sidedrawer/sidedrawer-id/${sidedrawerId}/records/record-id/${recordId}/record-files/${fileToken}`;
     } else if (fileNameWithExtension) {
-      downloadUrl = `/api/v2/record-files/sidedrawer/sidedrawer-id/${sidedrawerId}/records/record-id/${recordId}/record-files/recordfile-name/${fileNameWithExtension}`;
+      downloadUrl = `/api/v1/record-files/sidedrawer/sidedrawer-id/${sidedrawerId}/records/record-id/${recordId}/record-files/${fileNameWithExtension}`;
     } else {
       return isRequired("fileNameWithExtension or fileToken");
     }
