@@ -3,7 +3,7 @@ import { ObservablePromise } from "../types/core";
 import { isRequired } from "../utils/core";
 
 export interface SearchRecordsParams {
-  limit?: string;
+  limit?: number;
   startingAfter?: string;
   endingBefore?: string;
   totalCount?: number;
