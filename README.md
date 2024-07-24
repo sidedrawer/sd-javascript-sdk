@@ -158,11 +158,11 @@ records
         limit: 20
     })
     .subscribe({
-        next: (records) => { // Returns up to 20 records per page
-            console.log(records);
+        next: (results) => { // Returns up to 20 records per page
+            console.log(results);
         },
         complete: () => {
-            done();
+            // ...
         },
     });
 ```
@@ -171,7 +171,7 @@ or
 
 ```javascript
 // It paginates and buffer elements up to a maximum of 100.
-const records = await records.search({
+const results = await records.search({
     sidedrawerId: "test",
     name: "test",
     limit: 100
