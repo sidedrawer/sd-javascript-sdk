@@ -175,5 +175,5 @@ const records = await records.search({
     sidedrawerId: "test",
     name: "test",
     limit: 100
-}); // 
+});
 ```
