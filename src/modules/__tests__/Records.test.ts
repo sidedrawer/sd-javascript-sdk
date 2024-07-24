@@ -162,13 +162,14 @@ describe("Records", () => {
       .reply(200, {
         data: Array(20).fill(RECORD_EXAMPLE),
         hasMore: true,
-        nextPage: `${BASE_URL}/api/v2/records/sidedrawer/sidedrawer-id/test/records?page=2`,
+        nextPage: `page=2&limit=20`,
       });
 
     nock(BASE_URL)
       .get(`/api/v2/records/sidedrawer/sidedrawer-id/test/records`)
       .query({
         page: 2,
+        limit: 20
       })
       .reply(200, {
         data: Array(20).fill(RECORD_EXAMPLE),
@@ -207,13 +208,14 @@ describe("Records", () => {
       .reply(200, {
         data: Array(20).fill(RECORD_EXAMPLE),
         hasMore: true,
-        nextPage: `${BASE_URL}/api/v2/records/sidedrawer/sidedrawer-id/test/records?page=2`,
+        nextPage: `page=2&limit=20`,
       });
 
     nock(BASE_URL)
       .get(`/api/v2/records/sidedrawer/sidedrawer-id/test/records`)
       .query({
         page: 2,
+        limit: 20
       })
       .reply(200, {
         data: Array(20).fill(RECORD_EXAMPLE),
