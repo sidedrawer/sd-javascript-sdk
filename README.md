@@ -10,9 +10,9 @@ To install the SDK, use:
 npm install -S @sidedrawer/sdk
 ```
 
-## Example
+## Examples
 
-Import SDK
+### Import SDK
 
 ```javascript
 import { SideDrawer } from "@sidedrawer/sdk";
@@ -26,7 +26,8 @@ const { SideDrawer } = require("@sidedrawer/sdk");
 <script type="text/javascript" src="/dist/index.browser.js"></script>
 ```
 
-Create an instance of the SDK:
+
+### Create an instance of the SDK:
 
 ```javascript
 const sd = new SideDrawer({
@@ -36,7 +37,8 @@ const sd = new SideDrawer({
 
 Then you can use the different modules to communicate with our APIs. Examples:
 
-Search Records
+
+### Search Records
 
 ```javascript
 const sd = new SideDrawer({
@@ -50,7 +52,7 @@ const records = await sd.records.search({
 });
 ```
 
-Upload File to Record
+### Upload File to Record
 
 ```typescript
 const sd = new SideDrawer({
@@ -89,7 +91,7 @@ await sd.files.upload({
 });
 ```
 
-Download File from a Record
+### Download File from a Record
 
 Browser:
 
@@ -122,7 +124,7 @@ const file: ArrayBuffer = await sd.files.download({
 });
 ```
 
-Create an instance of single SDK module:
+### Create an instance of single SDK module:
 
 ```javascript
 import { Context, Records } from "@sidedrawer/sdk";
@@ -144,4 +146,34 @@ const context = new SideDrawer.Context({
 });
 
 const records = new SideDrawer.Records(context);
+```
+
+### Use pagination:
+
+```javascript
+records
+    .search({
+        sidedrawerId: "test",
+        name: "test",
+        limit: 20
+    })
+    .subscribe({
+        next: (records) => { // Returns up to 20 records per page
+            console.log(records);
+        },
+        complete: () => {
+            done();
+        },
+    });
+```
+
+or
+
+```javascript
+// It paginates and buffer elements up to a maximum of 100.
+const records = await records.search({
+    sidedrawerId: "test",
+    name: "test",
+    limit: 100
+}); // 
 ```
