@@ -211,7 +211,7 @@ class UploadProcess {
       return accumulator + blockUploadedBytes;
     }, 0);
 
-    const uploadedPercentage = Math.round(
+    const uploadedPercentage = Math.floor(
       (totalUploadedBytes * 100) / this.file.size
     );
 
