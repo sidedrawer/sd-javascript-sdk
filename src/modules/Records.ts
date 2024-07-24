@@ -28,12 +28,14 @@ export default class Records {
     this.context = context;
   }
 
-  public search({
-    sidedrawerId = isRequired("sidedrawerId"),
-    displayInactive = false,
-    locale = this.context.locale,
-    ...extraParams
-  }: SearchRecordsParams): ObservablePromise<Object[]> {
+  public search(params: SearchRecordsParams): ObservablePromise<Object[]> {
+    const {
+      sidedrawerId = isRequired("sidedrawerId"),
+      displayInactive = false,
+      locale = this.context.locale,
+      ...extraParams
+    } = params;
+
     return this.context.http.getWithPagination(
       `/api/v2/records/sidedrawer/sidedrawer-id/${sidedrawerId}/records`,
       {
