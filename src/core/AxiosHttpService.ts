@@ -5,9 +5,24 @@ import axios, {
   AxiosResponse,
   CreateAxiosDefaults,
 } from "axios";
-import { Observable, of, switchMap } from "rxjs";
+
+import {
+  bufferCount,
+  concat,
+  from,
+  mergeMap,
+  Observable,
+  of,
+  switchMap,
+} from "rxjs";
 
 import { HttpServiceError } from "./HttpService";
+
+interface PaginatedResponse<T> {
+  data: Array<T>;
+  hasMore: boolean;
+  nextPage?: string;
+}
 
 const privateScope = new WeakMap();
 
@@ -101,7 +116,7 @@ export default class AxiosHttpService {
 
   /**
    * @param config Axios request configuration
-   * @returns Abservable wrapper for Axios request data
+   * @returns Observable wrapper for Axios request data
    */
   public request<T>(config: AxiosRequestConfig): Observable<T> {
     const request$: Observable<AxiosResponse<T>> = this._requestWrapper(config);
@@ -124,6 +139,60 @@ export default class AxiosHttpService {
       method: "get",
       url,
     });
+  }
+
+  /**
+   * @param url URL or endpoint
+   * @param config Axios request configuration
+   * @returns Observable of resource elements
+   */
+  private _getWithPagination<T>(
+    url: string,
+    config?: AxiosRequestConfig
+  ): Observable<T> {
+    const request$ = this.get<PaginatedResponse<T>>(url, config);
+
+    return request$.pipe(
+      mergeMap((response: PaginatedResponse<T>) => {
+        const { data, hasMore, nextPage } = response;
+        const data$ = from(data);
+
+        if (hasMore && nextPage != null) {
+          const nextUrl = new URL(url, this.axios.defaults.baseURL);
+          const nextPageSearchParams = new URLSearchParams(nextPage);
+
+          for (const [key, value] of nextPageSearchParams.entries()) {
+            nextUrl.searchParams.set(key, value);
+          }
+
+          const nextPage$ = this._getWithPagination<T>(nextUrl.toString());
+
+          return concat(data$, nextPage$);
+        }
+
+        return data$;
+      })
+    );
+  }
+
+  /**
+   * @param url URL or endpoint
+   * @param config Axios request configuration
+   * @returns Observable of resource elements list
+   */
+  public getWithPagination<T>(
+    url: string,
+    config?: AxiosRequestConfig
+  ): Observable<T[]> {
+    const bufferLimit: number = config?.params?.limit ?? 20;
+
+    if (config?.params?.limit) {
+      config.params.limit = 20;
+    }
+
+    return this._getWithPagination<T>(url, config).pipe(
+      bufferCount(bufferLimit)
+    );
   }
 
   /**

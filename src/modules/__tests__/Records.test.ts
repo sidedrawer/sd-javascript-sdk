@@ -70,7 +70,11 @@ describe("Records", () => {
         locale: "en-CA",
         displayInactive: false,
       })
-      .reply(200, [RECORD_EXAMPLE]);
+      .reply(200, {
+        data: [RECORD_EXAMPLE],
+        hasMore: false,
+        nextPage: null,
+      });
 
     sd.records
       .search({
@@ -96,7 +100,11 @@ describe("Records", () => {
         locale: "en-CA",
         displayInactive: false,
       })
-      .reply(200, [RECORD_EXAMPLE]);
+      .reply(200, {
+        data: [RECORD_EXAMPLE],
+        hasMore: false,
+        nextPage: null,
+      });
 
     sd.records
       .search({
@@ -120,7 +128,11 @@ describe("Records", () => {
         locale: "en-CA",
         displayInactive: false,
       })
-      .reply(200, [RECORD_EXAMPLE]);
+      .reply(200, {
+        data: [RECORD_EXAMPLE],
+        hasMore: false,
+        nextPage: null,
+      });
 
     const records = await sd.records.search({
       locale: "en-CA",
@@ -131,6 +143,91 @@ describe("Records", () => {
     expect(records).not.toEqual(undefined);
     expect(records).toBeInstanceOf(Array);
     expect(records.length).toEqual(1);
+  });
+
+  it("Records.search pagination", (done) => {
+    expect.assertions(6);
+
+    nock(BASE_URL)
+      .get(`/api/v2/records/sidedrawer/sidedrawer-id/test/records`)
+      .query({
+        locale: "en-CA",
+        displayInactive: false,
+        name: "test",
+      })
+      .reply(200, {
+        data: Array(20).fill(RECORD_EXAMPLE),
+        hasMore: true,
+        nextPage: `startingAfter=6449c2926d2a5fcc6c83b6eb&limit=20`,
+      });
+
+    nock(BASE_URL)
+      .get(`/api/v2/records/sidedrawer/sidedrawer-id/test/records`)
+      .query({
+        startingAfter: "6449c2926d2a5fcc6c83b6eb",
+        limit: 20
+      })
+      .reply(200, {
+        data: Array(20).fill(RECORD_EXAMPLE),
+        hasMore: false,
+        nextPage: null,
+      });
+
+    sd.records
+      .search({
+        sidedrawerId: "test",
+        name: "test",
+      })
+      .subscribe({
+        next: (records: any) => {
+          expect(records).not.toEqual(undefined);
+          expect(records).toBeInstanceOf(Array);
+          expect(records.length).toEqual(20);
+        },
+        complete: () => {
+          done();
+        },
+      });
+  }, 1500);
+
+  it("await Records.search pagination", async () => {
+    expect.assertions(3);
+
+    nock(BASE_URL)
+      .get(`/api/v2/records/sidedrawer/sidedrawer-id/test/records`)
+      .query({
+        locale: "en-CA",
+        displayInactive: false,
+        name: "test",
+        limit: 20
+      })
+      .reply(200, {
+        data: Array(20).fill(RECORD_EXAMPLE),
+        hasMore: true,
+        nextPage: `startingAfter=64a56cb6a04a1d94290fd8e6&limit=20`,
+      });
+
+    nock(BASE_URL)
+      .get(`/api/v2/records/sidedrawer/sidedrawer-id/test/records`)
+      .query({
+        startingAfter: "64a56cb6a04a1d94290fd8e6",
+        limit: 20
+      })
+      .reply(200, {
+        data: Array(20).fill(RECORD_EXAMPLE),
+        hasMore: false,
+        nextPage: null,
+      });
+
+    const records = await sd.records.search({
+      sidedrawerId: "test",
+      name: "test",
+      limit: 30
+    });
+
+    expect(records).not.toEqual(undefined);
+    expect(records).toBeInstanceOf(Array);
+    expect(records.length).toEqual(30);
   });
 
   it("Records.searchRecords fail", async () => {
