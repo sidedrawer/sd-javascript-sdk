@@ -7,27 +7,33 @@ SDK for the SideDrawer API
 To install the SDK, use:
 
 ```bash
-npm install -S @sidedrawer/sdk
+npm install @sidedrawer/sdk
 ```
 
 ## Examples
 
 ### Import SDK
 
+ES Modules and Typescript:
+
 ```javascript
 import { SideDrawer } from "@sidedrawer/sdk";
 ```
 
+CommonJS:
+
 ```javascript
 const { SideDrawer } = require("@sidedrawer/sdk");
 ```
+
+Browser:
 
 ```html
 <script type="text/javascript" src="/dist/index.browser.js"></script>
 ```
 
 
-### Create an instance of the SDK:
+### Create an instance of the SDK
 
 ```javascript
 const sd = new SideDrawer({
@@ -124,7 +130,7 @@ const file: ArrayBuffer = await sd.files.download({
 });
 ```
 
-### Create an instance of single SDK module:
+### Create an instance of single SDK module
 
 ```javascript
 import { Context, Records } from "@sidedrawer/sdk";
@@ -148,7 +154,9 @@ const context = new SideDrawer.Context({
 const records = new SideDrawer.Records(context);
 ```
 
-### Use pagination:
+### Pagination
+
+Pagination is handled automatically in the background, and you can specify the maximum number of items to receive with the `limit` parameter.
 
 ```javascript
 records
