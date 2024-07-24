@@ -116,7 +116,7 @@ export default class AxiosHttpService {
 
   /**
    * @param config Axios request configuration
-   * @returns Abservable wrapper for Axios request data
+   * @returns Observable wrapper for Axios request data
    */
   public request<T>(config: AxiosRequestConfig): Observable<T> {
     const request$: Observable<AxiosResponse<T>> = this._requestWrapper(config);
@@ -158,7 +158,14 @@ export default class AxiosHttpService {
         const data$ = from(data);
 
         if (hasMore && nextPage != null) {
-          const nextPage$ = this._getWithPagination<T>(nextPage);
+          const nextUrl = new URL(url, this.axios.defaults.baseURL);
+          const nextPageSearchParams = new URLSearchParams(nextPage);
+
+          for (const [key, value] of nextPageSearchParams.entries()) {
+            nextUrl.searchParams.set(key, value);
+          }
+
+          const nextPage$ = this._getWithPagination<T>(nextUrl.toString());
 
           return concat(data$, nextPage$);
         }
