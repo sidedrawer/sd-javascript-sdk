@@ -162,13 +162,13 @@ describe("Records", () => {
       .reply(200, {
         data: Array(20).fill(RECORD_EXAMPLE),
         hasMore: true,
-        nextPage: `page=2&limit=20`,
+        nextPage: `startingAfter=6449c2926d2a5fcc6c83b6eb&limit=20`,
       });
 
     nock(BASE_URL)
       .get(`/api/v2/records/sidedrawer/sidedrawer-id/test/records`)
       .query({
-        page: 2,
+        startingAfter: "6449c2926d2a5fcc6c83b6eb",
         limit: 20
       })
       .reply(200, {
@@ -208,13 +208,13 @@ describe("Records", () => {
       .reply(200, {
         data: Array(20).fill(RECORD_EXAMPLE),
         hasMore: true,
-        nextPage: `page=2&limit=20`,
+        nextPage: `startingAfter=64a56cb6a04a1d94290fd8e6&limit=20`,
       });
 
     nock(BASE_URL)
       .get(`/api/v2/records/sidedrawer/sidedrawer-id/test/records`)
       .query({
-        page: 2,
+        startingAfter: "64a56cb6a04a1d94290fd8e6",
         limit: 20
       })
       .reply(200, {
