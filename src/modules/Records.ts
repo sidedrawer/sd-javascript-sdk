@@ -1,4 +1,5 @@
 import Context from "../core/Context";
+import { PaginatedResponse } from "../core/HttpService";
 import { ObservablePromise } from "../types/core";
 import { isRequired } from "../utils/core";
 
@@ -33,7 +34,7 @@ export default class Records {
     displayInactive = false,
     locale = this.context.locale,
     ...extraParams
-  }: SearchRecordsParams): ObservablePromise<Object[]> {
+  }: SearchRecordsParams): ObservablePromise<PaginatedResponse<Object>> {
     return this.context.http.getWithPagination(
       `/api/v2/records/sidedrawer/sidedrawer-id/${sidedrawerId}/records`,
       {
