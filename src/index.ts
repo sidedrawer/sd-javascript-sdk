@@ -30,6 +30,7 @@ export default class SideDrawer {
 globalThis.SideDrawer = SideDrawer;
 
 export * from "./core/Context";
+export * from "./core/HttpService";
 export * from "./modules/Files";
 export * from "./modules/Records";
 export * from "./types/base";

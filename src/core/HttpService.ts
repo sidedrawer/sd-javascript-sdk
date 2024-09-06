@@ -7,6 +7,7 @@ import axios, {
 } from "axios";
 
 import { Observable, concat, mergeMap, of, switchMap } from "rxjs";
+import { ObservablePromise } from "../types/core";
 
 interface ApiPaginatedResponse<T> {
   data: Array<T>;
@@ -17,7 +18,7 @@ interface ApiPaginatedResponse<T> {
 export interface PaginatedResponse<T> {
   data: Array<T>;
   hasMore: boolean;
-  nextPage(): Observable<PaginatedResponse<T>>;
+  nextPage(): ObservablePromise<PaginatedResponse<T>>;
 }
 
 export class HttpServiceError extends Error {
@@ -51,11 +52,11 @@ export default class HttpService {
 
   /**
    * @param config Axios request configuration
-   * @returns Observable wrapper for Axios request
+   * @returns ObservablePromise wrapper for Axios request
    */
   private _requestWrapper<T>(
     config: AxiosRequestConfig
-  ): Observable<AxiosResponse<T>> {
+  ): ObservablePromise<AxiosResponse<T>> {
     return new Observable<AxiosResponse>((subscriber) => {
       const controller = new AbortController();
       const { signal } = controller;
@@ -123,10 +124,10 @@ export default class HttpService {
 
   /**
    * @param config Axios request configuration
-   * @returns Observable wrapper for Axios request data
+   * @returns ObservablePromise wrapper for Axios request data
    */
-  public request<T>(config: AxiosRequestConfig): Observable<T> {
-    const request$: Observable<AxiosResponse<T>> =
+  public request<T>(config: AxiosRequestConfig): ObservablePromise<T> {
+    const request$: ObservablePromise<AxiosResponse<T>> =
       this._requestWrapper(config);
 
     return request$.pipe(
@@ -139,12 +140,12 @@ export default class HttpService {
   /**
    * @param url URL or endpoint
    * @param config Axios request configuration
-   * @returns Observable wrapper for Axios request data
+   * @returns ObservablePromise wrapper for Axios request data
    */
   public get<T>(
     url: string,
     config?: AxiosRequestConfig
-  ): Observable<T> {
+  ): ObservablePromise<T> {
     return this.request<T>({
       ...config,
       method: "get",
@@ -171,12 +172,12 @@ export default class HttpService {
   /**
    * @param url URL or endpoint
    * @param config Axios request configuration
-   * @returns Observable of resource page
+   * @returns ObservablePromise of resource page
    */
   public getWithPagination<T>(
     url: string,
     config?: AxiosRequestConfig
-  ): Observable<PaginatedResponse<T>> {
+  ): ObservablePromise<PaginatedResponse<T>> {
     const request$ = this.get<ApiPaginatedResponse<T>>(url, config);
 
     return request$.pipe(
@@ -209,12 +210,12 @@ export default class HttpService {
   /**
    * @param url URL or endpoint
    * @param config Axios request configuration
-   * @returns Observable wrapper for Axios request data
+   * @returns ObservablePromise wrapper for Axios request data
    */
   public delete<T>(
     url: string,
     config?: AxiosRequestConfig
-  ): Observable<T> {
+  ): ObservablePromise<T> {
     return this.request<T>({
       ...config,
       method: "delete",
@@ -226,13 +227,13 @@ export default class HttpService {
    * @param url URL or endpoint
    * @param data Axios data to send as request body
    * @param config Axios request configuration
-   * @returns Observable wrapper for Axios request data
+   * @returns ObservablePromise wrapper for Axios request data
    */
   public post<T>(
     url: string,
     data: any,
     config?: AxiosRequestConfig
-  ): Observable<T> {
+  ): ObservablePromise<T> {
     return this.request<T>({
       ...config,
       method: "post",
@@ -245,13 +246,13 @@ export default class HttpService {
    * @param url URL or endpoint
    * @param data Axios data to send as request body
    * @param config Axios request configuration
-   * @returns Observable wrapper for Axios request data
+   * @returns ObservablePromise wrapper for Axios request data
    */
   public put<T>(
     url: string,
     data: any,
     config?: AxiosRequestConfig
-  ): Observable<AxiosResponse | T> {
+  ): ObservablePromise<AxiosResponse | T> {
     return this.request<T>({
       ...config,
       method: "put",
