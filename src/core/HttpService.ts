@@ -153,6 +153,22 @@ export default class HttpService {
   }
 
   /**
+   * @param url Current url
+   * @param nextPageParams Next page params. Example param1=value&param2=value
+   * @returns Next page URL
+   */
+  private getNextPageUrl(url: string, nextPageParams: string): string {
+    const nextUrl = new URL(url, this.axios.defaults.baseURL);
+    const nextPageSearchParams = new URLSearchParams(nextPageParams);
+
+    for (const [key, value] of nextPageSearchParams.entries()) {
+      nextUrl.searchParams.set(key, value);
+    }
+
+    return nextUrl.toString();
+  }
+
+  /**
    * @param url URL or endpoint
    * @param config Axios request configuration
    * @returns Observable of resource page
@@ -168,18 +184,8 @@ export default class HttpService {
         const { data, hasMore, nextPage } = response;
 
         if (hasMore && nextPage != null) {
-          const nextUrl = new URL(url, this.axios.defaults.baseURL);
-          const nextPageSearchParams = new URLSearchParams(nextPage);
-
-          for (const key of nextUrl.searchParams.keys()) {
-            nextUrl.searchParams.delete(key);
-          }
-
-          for (const [key, value] of nextPageSearchParams.entries()) {
-            nextUrl.searchParams.set(key, value);
-          }
-
-          const nextPage$ = this.getWithPagination<T>(nextUrl.toString());
+          const nextPageUrl = this.getNextPageUrl(url, nextPage);
+          const nextPage$ = this.getWithPagination<T>(nextPageUrl);
 
           return concat(
             of({
