@@ -99,10 +99,12 @@ describe("HttpService", () => {
     const controller = new AbortController();
     const signal = controller.signal;
 
-    signal.addEventListener("abort", () => {
-      expect(signal.aborted).toBe(true);
+    let testDone = false;
 
-      done();
+    signal.addEventListener("abort", () => {
+      if (!testDone) {
+        done();
+      }
     });
 
     httpService.get(`${BASE_URL}/test`).subscribe({
@@ -118,7 +120,11 @@ describe("HttpService", () => {
 
         expect(err.code).toEqual("ECONNREFUSED");
 
-        done();
+        if (!testDone) {
+          testDone = true;
+
+          done();
+        }
       },
     });
 
@@ -244,7 +250,7 @@ describe("HttpService", () => {
   }, 1500);
 
   it("abort signal", (done) => {
-    // expect.assertions(3); // failing
+    expect.assertions(3);
 
     nock(BASE_URL).get(`/test`).delayConnection(1000).reply(403, {
       statusCode: 0,
