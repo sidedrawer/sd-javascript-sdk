@@ -17,8 +17,7 @@ describe("HttpService", () => {
 
   it("HttpService.constructor", () => {
     httpService = new HttpService({
-      baseURL: BASE_URL,
-      timeout: 250,
+      baseURL: BASE_URL
     });
   });
 
