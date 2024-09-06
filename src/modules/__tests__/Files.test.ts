@@ -39,10 +39,6 @@ describe("Files", () => {
     accessToken: "test",
   });
 
-  nock(BASE_URL)
-    .options((uri) => uri != null)
-    .reply(200);
-
   it(
     "Files.upload",
     (done) => {
