@@ -1,4 +1,5 @@
 import Context from "../core/Context";
+import { PaginatedResponse } from "../core/HttpService";
 import { ObservablePromise } from "../types/core";
 import { isRequired } from "../utils/core";
 
@@ -28,7 +29,7 @@ export default class Records {
     this.context = context;
   }
 
-  public search(params: SearchRecordsParams): ObservablePromise<Object[]> {
+  public search(params: SearchRecordsParams): ObservablePromise<PaginatedResponse<Object>> {
     const {
       sidedrawerId = isRequired("sidedrawerId"),
       displayInactive = false,

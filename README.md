@@ -178,10 +178,18 @@ records
 or
 
 ```javascript
-// It paginates and buffer elements up to a maximum of 100.
-const results = await records.search({
+// Returns up to 20 records per page
+let { data, hasMore, nextPage } = await records.search({
     sidedrawerId: "test",
     name: "test",
-    limit: 100
+    limit: 20
 });
+
+console.log("First page data: ", data);
+
+if (hasMore) {
+    ({ data, hasMore, nextPage } = await nextPage());
+
+    console.log("Next page data: ", data);
+}
 ```
