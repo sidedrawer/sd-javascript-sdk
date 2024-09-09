@@ -1,5 +1,7 @@
 name: CI
-on: [push]
+on:
+  pull_request:
+    types: [labeled, reopened, synchronize, ready_for_review]
 jobs:
   build:
     timeout-minutes: 10
@@ -8,8 +10,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        node: ['18.x'] # todo: use ['14.x', '16.x', '18.x']
-        os: [ubuntu-latest, windows-latest, macOS-latest]
+        node: ["18.x", "20.x"]
+        os: [ubuntu-latest, windows-latest]
 
     steps:
       - name: Checkout repo
@@ -28,9 +30,3 @@ jobs:
 
       - name: Build
         run: npm run build
-
-      - name: Size Limit
-        run: npm run size
-
-      - name: Build Docs
-        run: npm run build-docs

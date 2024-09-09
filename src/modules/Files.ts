@@ -47,7 +47,7 @@ export interface FileUploadOptions extends Abortable {
   maxChunkSizeBytes: number;
 }
 
-export interface FileUploadParams extends RecordFileQueryParams {
+export interface FileUploadParams extends RecordFileQueryParams, Partial<FileUploadOptions> {
   sidedrawerId: string;
   recordId: string;
   file: File | Blob;
@@ -57,7 +57,7 @@ export interface FileUploadParams extends RecordFileQueryParams {
 
 export type DownloadResponse = Blob | ArrayBuffer;
 
-export interface FileDownloadParams {
+export interface FileDownloadParams extends Partial<FileDownloadOptions> {
   sidedrawerId: string;
   recordId: string;
   fileNameWithExtension?: string;
@@ -211,7 +211,7 @@ class UploadProcess {
       return accumulator + blockUploadedBytes;
     }, 0);
 
-    const uploadedPercentage = Math.round(
+    const uploadedPercentage = Math.floor(
       (totalUploadedBytes * 100) / this.file.size
     );
 
@@ -329,7 +329,7 @@ export default class Files {
    * Upload file to a record.
    */
   public upload(
-    params: FileUploadParams & Partial<FileUploadOptions>
+    params: FileUploadParams
   ): ObservablePromise<RecordFileDetail> {
     const {
       sidedrawerId = isRequired("sidedrawerId"),
@@ -379,7 +379,7 @@ export default class Files {
   }
 
   public download(
-    params: FileDownloadParams & Partial<FileDownloadOptions>
+    params: FileDownloadParams
   ): ObservablePromise<DownloadResponse> {
     const {
       sidedrawerId = isRequired("sidedrawerId"),
@@ -414,7 +414,7 @@ export default class Files {
           progressSubscriber$ !== undefined &&
           progressEvent.total !== undefined
         ) {
-          const progress = Math.round(
+          const progress = Math.floor(
             (progressEvent.loaded * 100) / progressEvent.total
           );
 

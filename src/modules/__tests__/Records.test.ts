@@ -62,7 +62,7 @@ describe("Records", () => {
   });
 
   it("Records.search subscribe", (done) => {
-    expect.assertions(3);
+    expect.assertions(5);
 
     nock(BASE_URL)
       .get(`/api/v2/records/sidedrawer/sidedrawer-id/test/records`)
@@ -70,7 +70,11 @@ describe("Records", () => {
         locale: "en-CA",
         displayInactive: false,
       })
-      .reply(200, [RECORD_EXAMPLE]);
+      .reply(200, {
+        data: [RECORD_EXAMPLE],
+        hasMore: false,
+        nextPage: null,
+      });
 
     sd.records
       .search({
@@ -78,17 +82,23 @@ describe("Records", () => {
         displayInactive: false,
         sidedrawerId: "test",
       })
-      .subscribe((records: any) => {
-        expect(records).not.toEqual(undefined);
-        expect(records).toBeInstanceOf(Array);
-        expect(records.length).toEqual(1);
+      .subscribe((response: any) => {
+        expect(response).not.toEqual(undefined);
+
+        const { data, hasMore, nextPage } = response;
+
+        expect(data).toBeInstanceOf(Array);
+        expect(data.length).toEqual(1);
+
+        expect(hasMore).toEqual(false);
+        expect(nextPage).toBeInstanceOf(Function);
 
         done();
       });
   }, 1500);
 
   it("Records.search subscribe 2", (done) => {
-    expect.assertions(3);
+    expect.assertions(5);
 
     nock(BASE_URL)
       .get(`/api/v2/records/sidedrawer/sidedrawer-id/test/records`)
@@ -96,23 +106,33 @@ describe("Records", () => {
         locale: "en-CA",
         displayInactive: false,
       })
-      .reply(200, [RECORD_EXAMPLE]);
+      .reply(200, {
+        data: [RECORD_EXAMPLE],
+        hasMore: false,
+        nextPage: null,
+      });
 
     sd.records
       .search({
         sidedrawerId: "test",
       })
-      .subscribe((records: any) => {
-        expect(records).not.toEqual(undefined);
-        expect(records).toBeInstanceOf(Array);
-        expect(records.length).toEqual(1);
+      .subscribe((response: any) => {
+        expect(response).not.toEqual(undefined);
+
+        const { data, hasMore, nextPage } = response;
+
+        expect(data).toBeInstanceOf(Array);
+        expect(data.length).toEqual(1);
+
+        expect(hasMore).toEqual(false);
+        expect(nextPage).toBeInstanceOf(Function);
 
         done();
       });
   }, 1500);
 
   it("await Records.search", async () => {
-    expect.assertions(3);
+    expect.assertions(8);
 
     nock(BASE_URL)
       .get(`/api/v2/records/sidedrawer/sidedrawer-id/test/records`)
@@ -120,17 +140,135 @@ describe("Records", () => {
         locale: "en-CA",
         displayInactive: false,
       })
-      .reply(200, [RECORD_EXAMPLE]);
+      .reply(200, {
+        data: [RECORD_EXAMPLE],
+        hasMore: false,
+        nextPage: null,
+      });
 
-    const records = await sd.records.search({
+    let { data, hasMore, nextPage } = await sd.records.search({
       locale: "en-CA",
       displayInactive: false,
       sidedrawerId: "test",
     });
 
-    expect(records).not.toEqual(undefined);
-    expect(records).toBeInstanceOf(Array);
-    expect(records.length).toEqual(1);
+    expect(data).not.toEqual(undefined);
+    expect(data).toBeInstanceOf(Array);
+    expect(data.length).toEqual(1);
+
+    expect(hasMore).toEqual(false);
+    expect(nextPage).not.toEqual(undefined);
+
+    ({ data, hasMore, nextPage } = await nextPage());
+
+    expect(data).toEqual(undefined);
+    expect(hasMore).toEqual(undefined);
+    expect(nextPage).toEqual(undefined);
+  });
+
+  it("Records.search pagination", (done) => {
+    expect.assertions(6);
+
+    nock(BASE_URL)
+      .get(`/api/v2/records/sidedrawer/sidedrawer-id/test/records`)
+      .query({
+        locale: "en-CA",
+        displayInactive: false,
+        name: "test",
+      })
+      .reply(200, {
+        data: Array(20).fill(RECORD_EXAMPLE),
+        hasMore: true,
+        nextPage: `startingAfter=6449c2926d2a5fcc6c83b6eb&limit=20`,
+      });
+
+    nock(BASE_URL)
+      .get(`/api/v2/records/sidedrawer/sidedrawer-id/test/records`)
+      .query({
+        startingAfter: "6449c2926d2a5fcc6c83b6eb",
+        limit: 20,
+      })
+      .reply(200, {
+        data: Array(20).fill(RECORD_EXAMPLE),
+        hasMore: false,
+        nextPage: null,
+      });
+
+    sd.records
+      .search({
+        sidedrawerId: "test",
+        name: "test",
+      })
+      .subscribe({
+        next: (response: any) => {
+          const { data } = response;
+
+          expect(data).not.toEqual(undefined);
+          expect(data).toBeInstanceOf(Array);
+          expect(data.length).toEqual(20);
+        },
+        complete: () => {
+          done();
+        },
+      });
+  }, 1500);
+
+  it("await Records.search pagination", async () => {
+    expect.assertions(13);
+
+    nock(BASE_URL)
+      .get(`/api/v2/records/sidedrawer/sidedrawer-id/test/records`)
+      .query({
+        locale: "en-CA",
+        displayInactive: false,
+        name: "test",
+        limit: 20,
+      })
+      .reply(200, {
+        data: Array(20).fill(RECORD_EXAMPLE),
+        hasMore: true,
+        nextPage: `startingAfter=64a56cb6a04a1d94290fd8e6&limit=20`,
+      });
+
+    nock(BASE_URL)
+      .get(`/api/v2/records/sidedrawer/sidedrawer-id/test/records`)
+      .query({
+        startingAfter: "64a56cb6a04a1d94290fd8e6",
+        limit: 20,
+      })
+      .reply(200, {
+        data: Array(10).fill(RECORD_EXAMPLE),
+        hasMore: false,
+        nextPage: null,
+      });
+
+    let { data, hasMore, nextPage } = await sd.records.search({
+      sidedrawerId: "test",
+      name: "test",
+      limit: 20,
+    });
+
+    expect(data).not.toEqual(undefined);
+    expect(data).toBeInstanceOf(Array);
+    expect(data.length).toEqual(20);
+
+    expect(hasMore).toEqual(true);
+    expect(nextPage).not.toEqual(undefined);
+
+    ({ data, hasMore, nextPage } = await nextPage());
+
+    expect(data).not.toEqual(undefined);
+    expect(data).toBeInstanceOf(Array);
+    expect(data.length).toEqual(10);
+
+    expect(hasMore).toEqual(false);
+    expect(nextPage).not.toEqual(undefined);
+
+    ({ data, hasMore, nextPage } = await nextPage());
+
+    expect(data).toEqual(undefined);
+    expect(hasMore).toEqual(undefined);
+    expect(nextPage).toEqual(undefined);
   });
 
   it("Records.searchRecords fail", async () => {

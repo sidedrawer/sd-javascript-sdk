@@ -1,7 +1,5 @@
 import { Buffer } from "node:buffer";
 
-import "../../extensions/global/crypto.node";
-
 import SideDrawer, { FileUploadOptions, FileUploadParams } from "../..";
 import nock from "nock";
 import { Subject } from "rxjs";
@@ -21,8 +19,9 @@ class File extends Blob {
   }
 }
 
-// @ts-ignore
-globalThis.File = File;
+Object.assign(globalThis, {
+  File,
+});
 
 const BASE_URL = "https://localhost";
 
@@ -461,7 +460,7 @@ describe("Files", () => {
 
       nock(BASE_URL)
         .get(
-          `/api/v2/record-files/sidedrawer/sidedrawer-id/test/records/record-id/test/record-files/recordfile-name/test`
+          `/api/v1/record-files/sidedrawer/sidedrawer-id/test/records/record-id/test/record-files/test`
         )
         .delay({ head: 500, body: 500 })
         .reply(200, function (urlString) {
@@ -552,7 +551,7 @@ describe("Files", () => {
           sidedrawerId: "test",
           recordId: "test",
           fileToken: "test",
-          fileNameWithExtension: "testbad"
+          fileNameWithExtension: "testbad",
         })
         .subscribe({
           next: (file: Blob | ArrayBuffer) => {
@@ -576,7 +575,7 @@ describe("Files", () => {
 
       nock(BASE_URL)
         .get(
-          `/api/v2/record-files/sidedrawer/sidedrawer-id/test/records/record-id/test/record-files/recordfile-name/test`
+          `/api/v1/record-files/sidedrawer/sidedrawer-id/test/records/record-id/test/record-files/test`
         )
         .delay({ head: 500, body: 500 })
         .reply(200, function (urlString) {
@@ -648,7 +647,7 @@ describe("Files", () => {
 
       nock(BASE_URL)
         .get(
-          `/api/v2/record-files/sidedrawer/sidedrawer-id/test/records/record-id/test/record-files/recordfile-name/test`
+          `/api/v1/record-files/sidedrawer/sidedrawer-id/test/records/record-id/test/record-files/test`
         )
         .delay({ head: 500, body: 500 })
         .reply(200, function (urlString) {

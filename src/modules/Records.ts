@@ -1,18 +1,19 @@
 import Context from "../core/Context";
+import { PaginatedResponse } from "../core/HttpService";
 import { ObservablePromise } from "../types/core";
 import { isRequired } from "../utils/core";
 
 export interface SearchRecordsParams {
-  limit?: string;
+  limit?: number;
   startingAfter?: string;
   endingBefore?: string;
-  totalCount?: number;
   name?: string;
   uniqueReference?: string;
   recordTypeName?: string;
   recordSubtypeName?: string;
-  recordSubtypeOther?: string;
+  recordSubtypeOtherName?: string;
   recordTypeId?: string;
+  recordSubtypeId?: string;
   locale?: string;
   displayInactive?: boolean;
   status?: string;
@@ -28,13 +29,15 @@ export default class Records {
     this.context = context;
   }
 
-  public search({
-    sidedrawerId = isRequired("sidedrawerId"),
-    displayInactive = false,
-    locale = this.context.locale,
-    ...extraParams
-  }: SearchRecordsParams): ObservablePromise<Object[]> {
-    return this.context.http.get(
+  public search(params: SearchRecordsParams): ObservablePromise<PaginatedResponse<Object>> {
+    const {
+      sidedrawerId = isRequired("sidedrawerId"),
+      displayInactive = false,
+      locale = this.context.locale,
+      ...extraParams
+    } = params;
+
+    return this.context.http.getWithPagination(
       `/api/v2/records/sidedrawer/sidedrawer-id/${sidedrawerId}/records`,
       {
         params: {
