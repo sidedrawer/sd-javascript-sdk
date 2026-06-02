@@ -1,6 +1,9 @@
 {
   "name": "@sidedrawer/sdk",
-  "version": "0.0.17",
+  "version": "0.1.0",
+  "engines": {
+    "node": ">=18"
+  },
   "description": "SideDrawer SDK",
   "main": "./dist/index.js",
   "browser": "./dist/index.browser.js",
@@ -24,7 +27,8 @@
     "@rollup/plugin-replace": "^6.0.2",
     "@rollup/plugin-terser": "^0.4.4",
     "@rollup/plugin-typescript": "^12.1.4",
-    "@size-limit/preset-big-lib": "^11.2.0",
+    "@size-limit/file": "^11.2.0",
+    "size-limit": "^11.2.0",
     "@swc/helpers": "^0.5.17",
     "@types/crypto-js": "^4.2.2",
     "@types/jest": "^30.0.0",
@@ -39,7 +43,6 @@
     "typescript": "^5.8.3"
   },
   "dependencies": {
-    "axios": "^1.10.0",
     "rxjs": "^7.8.2"
   },
   "size-limit": [
