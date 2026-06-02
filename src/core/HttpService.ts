@@ -1,14 +1,5 @@
-import AxiosHttpService from "./AxiosHttpService";
+import FetchHttpService from "./FetchHttpService";
 
-export class HttpServiceError extends Error {
-  constructor(
-    public message: string,
-    public code?: string,
-    public request?: unknown,
-    public response?: unknown
-  ) {
-    super(message);
-  }
-}
+export { HttpServiceError } from "./HttpServiceError";
 
-export default AxiosHttpService;
+export default FetchHttpService;

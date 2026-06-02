@@ -18,7 +18,7 @@ import { Abortable, ObservablePromise } from "../types/core";
 import { RecordFileDetail, RecordFileQueryParams } from "../types/files";
 import { isBrowserEnvironment, isRequired } from "../utils/core";
 import { generateHash } from "../utils/crypto";
-import { AxiosProgressEvent } from "axios";
+import { SdkProgressEvent } from "../core/types/HttpRequestConfig";
 
 interface UploadProcessParams {
   httpService: HttpService;
@@ -156,11 +156,11 @@ class UploadProcess {
     uploadedBytesByBlockOrder[uploadProcessBlock.order] = 0;
 
     let onUploadProgress:
-      | ((progressEvent: AxiosProgressEvent) => void)
+      | ((progressEvent: SdkProgressEvent) => void)
       | undefined;
 
     if (isBrowserEnvironment()) {
-      onUploadProgress = (progressEvent: AxiosProgressEvent) => {
+      onUploadProgress = (progressEvent: SdkProgressEvent) => {
         uploadedBytesByBlockOrder[uploadProcessBlock.order] =
           progressEvent.loaded;
         this.emitUploadProgress();
@@ -177,9 +177,6 @@ class UploadProcess {
         {
           params: {
             order: uploadProcessBlock.order,
-          },
-          headers: {
-            "Content-Type": "multipart/form-data",
           },
           signal,
           onUploadProgress,
@@ -297,9 +294,6 @@ class UploadProcess {
         blocks: blocksJSON,
       },
       {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
         params: {
           ...record,
           checkSum: checksum,
@@ -405,11 +399,11 @@ export default class Files {
     }
 
     let onDownloadProgress:
-      | ((progressEvent: AxiosProgressEvent) => void)
+      | ((progressEvent: SdkProgressEvent) => void)
       | undefined;
 
     if (isBrowserEnvironment()) {
-      onDownloadProgress = (progressEvent: AxiosProgressEvent) => {
+      onDownloadProgress = (progressEvent: SdkProgressEvent) => {
         if (
           progressSubscriber$ !== undefined &&
           progressEvent.total !== undefined

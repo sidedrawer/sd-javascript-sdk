@@ -1,5 +1,5 @@
 import { timeout } from "rxjs";
-import AxiosHttpService from "../AxiosHttpService";
+import FetchHttpService from "../FetchHttpService";
 import nock from "nock";
 
 const BASE_URL = "https://localhost";
@@ -13,22 +13,22 @@ afterAll(() => {
 });
 
 describe("core", () => {
-  let axiosHttpService: AxiosHttpService;
+  let fetchHttpService: FetchHttpService;
 
-  it("AxiosHttpService.constructor", () => {
-    axiosHttpService = new AxiosHttpService({
+  it("FetchHttpService.constructor", () => {
+    fetchHttpService = new FetchHttpService({
       baseURL: BASE_URL,
     });
   });
 
-  it("AxiosHttpService.request", (done) => {
+  it("FetchHttpService.request", (done) => {
     expect.assertions(3);
 
     const message = "ok";
 
     nock(BASE_URL).get("/test").reply(200, { message });
 
-    axiosHttpService
+    fetchHttpService
       .request({
         url: "/test",
         method: "GET",
@@ -45,14 +45,14 @@ describe("core", () => {
       });
   }, 1500);
 
-  it("AxiosHttpService.get", (done) => {
+  it("FetchHttpService.get", (done) => {
     expect.assertions(3);
 
     const message = "ok";
 
     nock(BASE_URL).get("/test").reply(200, { message });
 
-    axiosHttpService.get("/test").subscribe({
+    fetchHttpService.get("/test").subscribe({
       next: (response: any) => {
         expect(response).not.toEqual(undefined);
         expect(response.message).not.toEqual(undefined);
@@ -64,14 +64,14 @@ describe("core", () => {
     });
   }, 1500);
 
-  it("AxiosHttpService.delete", (done) => {
+  it("FetchHttpService.delete", (done) => {
     expect.assertions(3);
 
     const message = "ok";
 
     nock(BASE_URL).delete("/test").reply(200, { message });
 
-    axiosHttpService.delete("/test").subscribe({
+    fetchHttpService.delete("/test").subscribe({
       next: (response: any) => {
         expect(response).not.toEqual(undefined);
         expect(response.message).not.toEqual(undefined);
@@ -83,7 +83,7 @@ describe("core", () => {
     });
   }, 1500);
 
-  it("AxiosHttpService.post", (done) => {
+  it("FetchHttpService.post", (done) => {
     expect.assertions(6);
 
     const message = "ok";
@@ -98,7 +98,7 @@ describe("core", () => {
       })
       .reply(200, { message });
 
-    axiosHttpService.post("/test", { message }).subscribe({
+    fetchHttpService.post("/test", { message }).subscribe({
       next: (response: any) => {
         expect(response).not.toEqual(undefined);
         expect(response.message).not.toEqual(undefined);
@@ -110,7 +110,7 @@ describe("core", () => {
     });
   }, 1500);
 
-  it("AxiosHttpService.put", (done) => {
+  it("FetchHttpService.put", (done) => {
     expect.assertions(6);
 
     const message = "ok";
@@ -125,7 +125,7 @@ describe("core", () => {
       })
       .reply(200, { message });
 
-    axiosHttpService.put("/test", { message }).subscribe({
+    fetchHttpService.put("/test", { message }).subscribe({
       next: (response: any) => {
         expect(response).not.toEqual(undefined);
         expect(response.message).not.toEqual(undefined);
@@ -137,7 +137,7 @@ describe("core", () => {
     });
   }, 1500);
 
-  it("AxiosHttpService error", (done) => {
+  it("FetchHttpService error", (done) => {
     expect.assertions(3);
 
     nock(BASE_URL).get(`/test`).reply(403, {
@@ -146,7 +146,7 @@ describe("core", () => {
       message: "string",
     });
 
-    axiosHttpService.get("/test").subscribe({
+    fetchHttpService.get("/test").subscribe({
       error: (err: Error) => {
         expect(err).not.toEqual(undefined);
         expect(err).toBeInstanceOf(Error);
@@ -157,7 +157,7 @@ describe("core", () => {
     });
   });
 
-  it("AxiosHttpService abort signal", (done) => {
+  it("FetchHttpService abort signal", (done) => {
     expect.assertions(3);
 
     nock(BASE_URL).get(`/test`).delayConnection(1000).reply(403, {
@@ -169,7 +169,7 @@ describe("core", () => {
     const controller = new AbortController();
     const signal = controller.signal;
 
-    axiosHttpService
+    fetchHttpService
       .get("/test", {
         signal,
       })
@@ -177,7 +177,7 @@ describe("core", () => {
         error: (err: Error) => {
           expect(err).not.toEqual(undefined);
           expect(err.message).not.toEqual(undefined);
-          expect(err.message.toLowerCase()).toContain("aborted");
+          expect(err.message.toLowerCase()).toMatch(/abort|cancel/);
 
           done();
         },
@@ -188,7 +188,7 @@ describe("core", () => {
     }, 100);
   }, 3000);
 
-  it("AxiosHttpService timeout from pipe", (done) => {
+  it("FetchHttpService timeout from pipe", (done) => {
     expect.assertions(3);
 
     nock(BASE_URL).get(`/test`).delayConnection(2000).reply(403, {
@@ -197,7 +197,7 @@ describe("core", () => {
       message: "string",
     });
 
-    axiosHttpService
+    fetchHttpService
       .get("/test")
       .pipe(timeout(1000))
       .subscribe({
@@ -207,7 +207,7 @@ describe("core", () => {
           expect(err.message.toLowerCase()).toContain("timeout");
 
           done();
-        }
+        },
       });
   }, 4000);
 });

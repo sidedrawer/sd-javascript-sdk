@@ -293,7 +293,7 @@ describe("Files", () => {
     1000 * 14
   );
 
-  it("Files.upload fail 2", (done) => {
+  it("Files.upload abort", (done) => {
     expect.assertions(3);
 
     const file = generateBlob(4 * 1024 * 1024 * 2);
@@ -314,8 +314,6 @@ describe("Files", () => {
 
     signal.addEventListener("abort", () => {
       expect(signal.aborted).toBe(true);
-
-      done();
     });
 
     sd.files
@@ -331,7 +329,9 @@ describe("Files", () => {
       .subscribe({
         error: (err: Error) => {
           expect(err).not.toBe(undefined);
-          expect(err.message).toMatch(/canceled|close/);
+          expect(err.message).toMatch(/canceled|cancelled|close|abort/i);
+
+          done();
         },
       });
 
@@ -461,7 +461,7 @@ describe("Files", () => {
 
       nock(BASE_URL)
         .get(
-          `/api/v2/record-files/sidedrawer/sidedrawer-id/test/records/record-id/test/record-files/recordfile-name/test`
+          `/api/v1/record-files/sidedrawer/sidedrawer-id/test/records/record-id/test/record-files/test`
         )
         .delay({ head: 500, body: 500 })
         .reply(200, function (urlString) {
@@ -576,7 +576,7 @@ describe("Files", () => {
 
       nock(BASE_URL)
         .get(
-          `/api/v2/record-files/sidedrawer/sidedrawer-id/test/records/record-id/test/record-files/recordfile-name/test`
+          `/api/v1/record-files/sidedrawer/sidedrawer-id/test/records/record-id/test/record-files/test`
         )
         .delay({ head: 500, body: 500 })
         .reply(200, function (urlString) {
@@ -648,7 +648,7 @@ describe("Files", () => {
 
       nock(BASE_URL)
         .get(
-          `/api/v2/record-files/sidedrawer/sidedrawer-id/test/records/record-id/test/record-files/recordfile-name/test`
+          `/api/v1/record-files/sidedrawer/sidedrawer-id/test/records/record-id/test/record-files/test`
         )
         .delay({ head: 500, body: 500 })
         .reply(200, function (urlString) {
