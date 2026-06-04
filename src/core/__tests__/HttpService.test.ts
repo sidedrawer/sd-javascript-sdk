@@ -1,4 +1,5 @@
-import HttpService, { HttpServiceError } from "../HttpService";
+import HttpService from "../HttpService";
+import { HttpServiceError } from "../HttpServiceError";
 import nock from "nock";
 
 const BASE_URL = "https://localhost";

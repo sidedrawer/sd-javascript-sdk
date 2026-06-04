@@ -22,7 +22,7 @@ import { Abortable, ObservablePromise } from "../types/core";
 import { FileBlock, RecordFileDetail, RecordFileQueryParams } from "../types/files";
 import { isBrowserEnvironment, isRequired } from "../utils/core";
 import { generateHash } from "../utils/crypto";
-import { AxiosProgressEvent } from "axios";
+import { SdkProgressEvent } from "../core/types/HttpRequestConfig";
 
 console.log("[SDK Download] version 4");
 
@@ -194,11 +194,11 @@ class UploadProcess {
     uploadedBytesByBlockOrder[uploadProcessBlock.order] = 0;
 
     let onUploadProgress:
-      | ((progressEvent: AxiosProgressEvent) => void)
+      | ((progressEvent: SdkProgressEvent) => void)
       | undefined;
 
     if (isBrowserEnvironment()) {
-      onUploadProgress = (progressEvent: AxiosProgressEvent) => {
+      onUploadProgress = (progressEvent: SdkProgressEvent) => {
         uploadedBytesByBlockOrder[uploadProcessBlock.order] =
           progressEvent.loaded;
         this.emitUploadProgress();
@@ -215,9 +215,6 @@ class UploadProcess {
         {
           params: {
             order: uploadProcessBlock.order,
-          },
-          headers: {
-            "Content-Type": "multipart/form-data",
           },
           signal,
           onUploadProgress,
@@ -335,9 +332,6 @@ class UploadProcess {
         blocks: blocksJSON,
       },
       {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
         params: {
           ...record,
           checkSum: checksum,
@@ -594,7 +588,7 @@ export default class Files {
           Range: `bytes=${start}-${end}`,
         },
         signal,
-        onDownloadProgress: isBrowserEnvironment() ? (progressEvent: AxiosProgressEvent) => {
+        onDownloadProgress: isBrowserEnvironment() ? (progressEvent: SdkProgressEvent) => {
           if (progressEvent.loaded !== undefined && progressSubscriber$) {
             downloadedBytes[chunkIndex] = progressEvent.loaded;
             // Estimamos el progreso basado en chunks descargados
@@ -801,9 +795,9 @@ export default class Files {
     const base = streamBaseUrl ? streamBaseUrl.replace(/\/$/, "") : "";
     const url = base ? base + streamPath : streamPath;
 
-    let onDownloadProgress: ((progressEvent: AxiosProgressEvent) => void) | undefined;
+    let onDownloadProgress: ((progressEvent: SdkProgressEvent) => void) | undefined;
     if (isBrowserEnvironment() && progressSubscriber$) {
-      onDownloadProgress = (progressEvent: AxiosProgressEvent) => {
+      onDownloadProgress = (progressEvent: SdkProgressEvent) => {
         if (progressEvent.total != null && progressEvent.total > 0) {
           const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
           progressSubscriber$.next(progress);
@@ -831,11 +825,11 @@ export default class Files {
     signal?: AbortSignal
   ): ObservablePromise<DownloadResponse> {
     let onDownloadProgress:
-      | ((progressEvent: AxiosProgressEvent) => void)
+      | ((progressEvent: SdkProgressEvent) => void)
       | undefined;
 
     if (isBrowserEnvironment()) {
-      onDownloadProgress = (progressEvent: AxiosProgressEvent) => {
+      onDownloadProgress = (progressEvent: SdkProgressEvent) => {
         if (
           progressSubscriber$ !== undefined &&
           progressEvent.total !== undefined
@@ -1005,11 +999,11 @@ export default class Files {
     console.log("[SDK Download Range] Requesting range:", rangeHeader);
 
     let onDownloadProgress:
-      | ((progressEvent: AxiosProgressEvent) => void)
+      | ((progressEvent: SdkProgressEvent) => void)
       | undefined;
 
-        if (isBrowserEnvironment()) {
-      onDownloadProgress = (progressEvent: AxiosProgressEvent) => {
+    if (isBrowserEnvironment()) {
+      onDownloadProgress = (progressEvent: SdkProgressEvent) => {
         if (
           progressSubscriber$ !== undefined &&
           progressEvent.total !== undefined

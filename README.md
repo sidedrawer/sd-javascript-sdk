@@ -10,6 +10,13 @@ To install the SDK, use:
 npm install -S @sidedrawer/sdk
 ```
 
+## Requirements
+
+- **Node.js 18+** (native `fetch` for the HTTP layer)
+- Modern browsers with native `fetch` and `XMLHttpRequest` (upload progress)
+
+No consumer code changes are required when upgrading from 0.0.x to 0.1.0.
+
 ## Example
 
 Import SDK
