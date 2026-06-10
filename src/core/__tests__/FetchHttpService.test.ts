@@ -403,4 +403,116 @@ describe("core", () => {
         },
       });
   }, 5000);
+
+  // SPD-3781 Phase 2: onChunk callback for incremental persistence
+  // (downloads -> disk / IndexedDB without buffering the whole file).
+  it("FetchHttpService onChunk fires per streamed chunk and bytes match payload", (done) => {
+    const totalBytes = 16 * 1024;
+    const payload = Buffer.alloc(totalBytes, 0xab);
+
+    nock(BASE_URL).get("/chunked").reply(200, payload, {
+      "Content-Length": String(totalBytes),
+      "Content-Type": "application/octet-stream",
+    });
+
+    const receivedChunks: Uint8Array[] = [];
+
+    fetchHttpService
+      .get<ArrayBuffer | Buffer>("/chunked", {
+        responseType: "arraybuffer",
+        onChunk: (chunk) => {
+          receivedChunks.push(chunk);
+        },
+      })
+      .subscribe({
+        next: (data) => {
+          // Default mode (discardBuffer=false) still returns the full payload.
+          const byteLength =
+            data instanceof ArrayBuffer ? data.byteLength : data.length;
+          expect(byteLength).toBe(totalBytes);
+        },
+        complete: () => {
+          expect(receivedChunks.length).toBeGreaterThan(0);
+          const summed = receivedChunks.reduce(
+            (acc, c) => acc + c.byteLength,
+            0
+          );
+          expect(summed).toBe(totalBytes);
+          // Every byte we received was 0xAB (the payload filler).
+          for (const chunk of receivedChunks) {
+            for (let i = 0; i < chunk.byteLength; i++) {
+              expect(chunk[i]).toBe(0xab);
+            }
+          }
+          done();
+        },
+      });
+  }, 5000);
+
+  it("FetchHttpService discardBuffer streams via onChunk and resolves with null", (done) => {
+    const totalBytes = 12 * 1024;
+    const payload = Buffer.alloc(totalBytes, 0xcd);
+
+    nock(BASE_URL).get("/streaming-only").reply(200, payload, {
+      "Content-Length": String(totalBytes),
+      "Content-Type": "application/octet-stream",
+    });
+
+    let receivedBytes = 0;
+
+    fetchHttpService
+      .get<ArrayBuffer | Buffer | null>("/streaming-only", {
+        responseType: "arraybuffer",
+        discardBuffer: true,
+        onChunk: (chunk) => {
+          receivedBytes += chunk.byteLength;
+        },
+      })
+      .subscribe({
+        next: (data) => {
+          // discardBuffer=true => SDK does NOT accumulate, returns null.
+          expect(data).toBeNull();
+        },
+        complete: () => {
+          // Caller saw the full payload via onChunk even though the result is null.
+          expect(receivedBytes).toBe(totalBytes);
+          done();
+        },
+      });
+  }, 5000);
+
+  it("FetchHttpService forwards Range request header for partial downloads", (done) => {
+    const fullBytes = 1024;
+    const startOffset = 256;
+    const partial = Buffer.alloc(fullBytes - startOffset, 0xee);
+
+    nock(BASE_URL)
+      .get("/range")
+      .matchHeader("Range", "bytes=256-")
+      .reply(206, partial, {
+        "Content-Length": String(fullBytes - startOffset),
+        "Content-Range": `bytes ${startOffset}-${fullBytes - 1}/${fullBytes}`,
+        "Content-Type": "application/octet-stream",
+      });
+
+    fetchHttpService
+      .getWithResponse<ArrayBuffer | Buffer>("/range", {
+        responseType: "arraybuffer",
+        headers: { Range: "bytes=256-" },
+      })
+      .subscribe({
+        next: (response) => {
+          expect(response.status).toBe(206);
+          expect(response.headers["content-range"]).toBe(
+            `bytes ${startOffset}-${fullBytes - 1}/${fullBytes}`
+          );
+          const byteLength =
+            response.data instanceof ArrayBuffer
+              ? response.data.byteLength
+              : response.data.length;
+          expect(byteLength).toBe(fullBytes - startOffset);
+        },
+        complete: () => done(),
+      });
+  }, 5000);
 });

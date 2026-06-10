@@ -146,17 +146,30 @@ function toHttpServiceError(
   return new HttpServiceError(message, code, request, response);
 }
 
+interface StreamingOptions {
+  onDownloadProgress?: (event: SdkProgressEvent) => void;
+  onChunk?: (chunk: Uint8Array) => void;
+  discardBuffer?: boolean;
+}
+
+/**
+ * Streaming reader for binary responses. Always invokes `onChunk` and
+ * `onDownloadProgress` (when provided) for each chunk. If `discardBuffer`
+ * is true, the chunks are NOT accumulated and the returned `Uint8Array`
+ * is empty — intended for memory-safe pipes where the consumer persists
+ * elsewhere via `onChunk`.
+ */
 async function readBodyWithProgress(
   response: Response,
-  onDownloadProgress?: (event: SdkProgressEvent) => void
+  options: StreamingOptions
 ): Promise<Uint8Array> {
-  // Streaming path: read chunks and emit progress.
-  // The Content-Length header may be absent for chunked responses; total is then undefined
-  // and consumers should treat progress as "bytes so far, no percentage".
+  // The Content-Length header may be absent for chunked responses; total is
+  // then undefined and consumers should treat progress as "bytes so far".
   const contentLength = response.headers.get("Content-Length");
   const total = contentLength ? parseInt(contentLength, 10) : undefined;
   const reader = response.body!.getReader();
-  const chunks: Uint8Array[] = [];
+  const chunks: Uint8Array[] = options.discardBuffer ? [] : [];
+  const accumulate = !options.discardBuffer;
   let loaded = 0;
 
   while (true) {
@@ -166,10 +179,17 @@ async function readBodyWithProgress(
     }
 
     if (value) {
-      chunks.push(value);
+      if (accumulate) {
+        chunks.push(value);
+      }
       loaded += value.byteLength;
-      onDownloadProgress?.({ loaded, total });
+      options.onChunk?.(value);
+      options.onDownloadProgress?.({ loaded, total });
     }
+  }
+
+  if (!accumulate) {
+    return new Uint8Array(0);
   }
 
   const merged = new Uint8Array(loaded);
@@ -184,16 +204,23 @@ async function readBodyWithProgress(
 async function parseResponseBody(
   response: Response,
   responseType: HttpRequestConfig["responseType"],
-  onDownloadProgress?: (event: SdkProgressEvent) => void
+  streaming: StreamingOptions
 ): Promise<unknown> {
   const type = responseType ?? "json";
-  const canStream = onDownloadProgress != null && response.body != null;
+  const wantsStream =
+    streaming.onDownloadProgress != null ||
+    streaming.onChunk != null ||
+    streaming.discardBuffer === true;
+  const canStream = wantsStream && response.body != null;
 
   if (type === "blob") {
     if (!canStream) {
       return response.blob();
     }
-    const merged = await readBodyWithProgress(response, onDownloadProgress);
+    const merged = await readBodyWithProgress(response, streaming);
+    if (streaming.discardBuffer) {
+      return null;
+    }
     const contentType = response.headers.get("Content-Type") ?? undefined;
     if (typeof Blob !== "undefined") {
       return contentType
@@ -212,7 +239,10 @@ async function parseResponseBody(
       }
       return buffer;
     }
-    const merged = await readBodyWithProgress(response, onDownloadProgress);
+    const merged = await readBodyWithProgress(response, streaming);
+    if (streaming.discardBuffer) {
+      return null;
+    }
     if (typeof Buffer !== "undefined") {
       return Buffer.from(merged);
     }
@@ -223,12 +253,18 @@ async function parseResponseBody(
     if (!canStream) {
       return response.text();
     }
-    const merged = await readBodyWithProgress(response, onDownloadProgress);
+    const merged = await readBodyWithProgress(response, streaming);
+    if (streaming.discardBuffer) {
+      return null;
+    }
     return new TextDecoder().decode(merged);
   }
 
   if (canStream) {
-    const merged = await readBodyWithProgress(response, onDownloadProgress);
+    const merged = await readBodyWithProgress(response, streaming);
+    if (streaming.discardBuffer) {
+      return null;
+    }
     const text = new TextDecoder().decode(merged);
     if (!text) {
       return null;
@@ -583,7 +619,11 @@ export default class FetchHttpService {
     const responseData = await parseResponseBody(
       response,
       config.responseType,
-      config.onDownloadProgress
+      {
+        onDownloadProgress: config.onDownloadProgress,
+        onChunk: config.onChunk,
+        discardBuffer: config.discardBuffer,
+      }
     );
 
     const responseObject: HttpResponse<T> = {
