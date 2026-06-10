@@ -491,7 +491,7 @@ describe("Files", () => {
           progressSubscriber$,
         })
         .subscribe({
-          next: (file: Blob | ArrayBuffer) => {
+          next: (file: Blob | ArrayBuffer | null) => {
             expect(file).not.toBe(undefined);
             expect(file).toBeInstanceOf(Buffer);
           },
@@ -526,7 +526,7 @@ describe("Files", () => {
           fileToken: "test",
         })
         .subscribe({
-          next: (file: Blob | ArrayBuffer) => {
+          next: (file: Blob | ArrayBuffer | null) => {
             expect(file).not.toBe(undefined);
             expect(file).toBeInstanceOf(Buffer);
           },
@@ -562,7 +562,7 @@ describe("Files", () => {
           fileNameWithExtension: "testbad"
         })
         .subscribe({
-          next: (file: Blob | ArrayBuffer) => {
+          next: (file: Blob | ArrayBuffer | null) => {
             expect(file).not.toBe(undefined);
             expect(file).toBeInstanceOf(Buffer);
           },
@@ -599,7 +599,7 @@ describe("Files", () => {
           fileNameWithExtension: "test",
         })
         .subscribe({
-          next: (file: Blob | ArrayBuffer) => {
+          next: (file: Blob | ArrayBuffer | null) => {
             expect(file).not.toBe(undefined);
             expect(file).not.toBeInstanceOf(Buffer);
           },
@@ -636,7 +636,7 @@ describe("Files", () => {
           fileToken: "test",
         })
         .subscribe({
-          next: (file: Blob | ArrayBuffer) => {
+          next: (file: Blob | ArrayBuffer | null) => {
             expect(file).not.toBe(undefined);
             expect(file).not.toBeInstanceOf(Buffer);
           },
@@ -819,7 +819,7 @@ describe("Files", () => {
           responseType: "arraybuffer",
         })
         .subscribe({
-          next: (file: Blob | ArrayBuffer) => {
+          next: (file: Blob | ArrayBuffer | null) => {
             expect(file).not.toBe(undefined);
             expect(file).toBeInstanceOf(Buffer);
           },
@@ -830,4 +830,153 @@ describe("Files", () => {
     },
     1000 * 5
   );
+
+  // SPD-3781 Phase 2: resumable downloads via HTTP Range + onChunk callback.
+
+  it("Files.download throws synchronously when discardBuffer=true without onChunk", () => {
+    expect(() =>
+      sd.files.download({
+        sidedrawerId: "test",
+        recordId: "test",
+        fileToken: "tk",
+        discardBuffer: true,
+      })
+    ).toThrow(/discardBuffer.*requires.*onChunk/i);
+  });
+
+  it("Files.download throws synchronously for negative resumeFrom", () => {
+    expect(() =>
+      sd.files.download({
+        sidedrawerId: "test",
+        recordId: "test",
+        fileToken: "tk",
+        resumeFrom: -1,
+      })
+    ).toThrow(/invalid resumeFrom/i);
+  });
+
+  it("Files.download sends Range header when resumeFrom > 0", (done) => {
+    expect.assertions(2);
+
+    const totalBytes = 4 * 1024;
+    const startOffset = 1024;
+    const partial = Buffer.alloc(totalBytes - startOffset, 0x11);
+
+    nock(BASE_URL)
+      .get(
+        `/api/v2/record-files/sidedrawer/sidedrawer-id/test/records/record-id/test/record-files/tk-resume`
+      )
+      .matchHeader("Range", `bytes=${startOffset}-`)
+      .reply(206, partial, {
+        "Content-Length": String(totalBytes - startOffset),
+        "Content-Range": `bytes ${startOffset}-${totalBytes - 1}/${totalBytes}`,
+        "Content-Type": "application/octet-stream",
+      });
+
+    sd.files
+      .download({
+        sidedrawerId: "test",
+        recordId: "test",
+        fileToken: "tk-resume",
+        responseType: "arraybuffer",
+        resumeFrom: startOffset,
+      })
+      .subscribe({
+        next: (data) => {
+          expect(data).not.toBe(null);
+          let byteLength = 0;
+          if (data instanceof ArrayBuffer) {
+            byteLength = data.byteLength;
+          } else if (Buffer.isBuffer(data)) {
+            byteLength = data.length;
+          } else if (data instanceof Blob) {
+            byteLength = data.size;
+          }
+          expect(byteLength).toBe(totalBytes - startOffset);
+        },
+        complete: () => done(),
+      });
+  }, 5000);
+
+  it("Files.download onChunk receives absolute offsets relative to original file", (done) => {
+    expect.assertions(2);
+
+    const totalBytes = 8 * 1024;
+    const startOffset = 2048;
+    const partial = Buffer.alloc(totalBytes - startOffset, 0x22);
+
+    nock(BASE_URL)
+      .get(
+        `/api/v2/record-files/sidedrawer/sidedrawer-id/test/records/record-id/test/record-files/tk-chunked`
+      )
+      .matchHeader("Range", `bytes=${startOffset}-`)
+      .reply(206, partial, {
+        "Content-Length": String(totalBytes - startOffset),
+        "Content-Type": "application/octet-stream",
+      });
+
+    const seenOffsets: number[] = [];
+    let totalSeen = 0;
+
+    sd.files
+      .download({
+        sidedrawerId: "test",
+        recordId: "test",
+        fileToken: "tk-chunked",
+        responseType: "arraybuffer",
+        resumeFrom: startOffset,
+        onChunk: (chunk, offsetFromStart) => {
+          seenOffsets.push(offsetFromStart);
+          totalSeen += chunk.byteLength;
+        },
+      })
+      .subscribe({
+        complete: () => {
+          // First chunk should report the resumeFrom offset, not 0.
+          expect(seenOffsets[0]).toBe(startOffset);
+          // Sum of all chunks equals the partial payload length.
+          expect(totalSeen).toBe(totalBytes - startOffset);
+          done();
+        },
+      });
+  }, 5000);
+
+  it("Files.download with discardBuffer streams via onChunk and resolves with null", (done) => {
+    expect.assertions(2);
+
+    const totalBytes = 6 * 1024;
+    const payload = Buffer.alloc(totalBytes, 0x33);
+
+    nock(BASE_URL)
+      .get(
+        `/api/v2/record-files/sidedrawer/sidedrawer-id/test/records/record-id/test/record-files/tk-discard`
+      )
+      .reply(200, payload, {
+        "Content-Length": String(totalBytes),
+        "Content-Type": "application/octet-stream",
+      });
+
+    let received = 0;
+
+    sd.files
+      .download({
+        sidedrawerId: "test",
+        recordId: "test",
+        fileToken: "tk-discard",
+        responseType: "arraybuffer",
+        discardBuffer: true,
+        onChunk: (chunk) => {
+          received += chunk.byteLength;
+        },
+      })
+      .subscribe({
+        next: (data) => {
+          expect(data).toBeNull();
+        },
+        complete: () => {
+          expect(received).toBe(totalBytes);
+          done();
+        },
+      });
+  }, 5000);
 });

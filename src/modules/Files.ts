@@ -112,7 +112,11 @@ export interface FileUploadParams extends RecordFileQueryParams {
   externalKeys?: ExternalKeys;
 }
 
-export type DownloadResponse = Blob | ArrayBuffer;
+/**
+ * Result of {@link Files.download}. `null` only when `discardBuffer: true`
+ * was set in the options (memory-safe streaming mode).
+ */
+export type DownloadResponse = Blob | ArrayBuffer | null;
 
 export interface FileDownloadParams {
   sidedrawerId: string;
@@ -123,9 +127,41 @@ export interface FileDownloadParams {
 
 export type FileDownloadResponseType = "blob" | "arraybuffer";
 
-export interface FileDownloadOptions {
+export interface FileDownloadOptions extends Abortable {
   responseType: FileDownloadResponseType;
   progressSubscriber$?: Subject<number>;
+  /**
+   * Start byte offset for the download. Defaults to `0` (whole file). When
+   * `> 0`, the SDK issues an HTTP `Range: bytes=resumeFrom-` request and
+   * the returned `Blob`/`ArrayBuffer` contains ONLY the bytes from
+   * `resumeFrom` to the end. The caller is responsible for combining those
+   * bytes with whatever was downloaded earlier (typically via `onChunk`).
+   *
+   * If the server doesn't satisfy the range it usually returns `416`; the
+   * SDK surfaces that as an `HttpServiceError` so the caller can fall back
+   * to a full download.
+   */
+  resumeFrom?: number;
+  /**
+   * Invoked once per network chunk while streaming. The `offsetFromStart`
+   * is the **absolute** position in the original file (i.e. `resumeFrom +
+   * bytesReceivedInThisCall - chunk.byteLength`), so the caller can append
+   * to a partial file without bookkeeping.
+   *
+   * Combine with `discardBuffer: true` to keep memory flat: in that mode
+   * the SDK does not accumulate the chunks for the returned value, it just
+   * pipes them through this callback.
+   */
+  onChunk?: (chunk: Uint8Array, offsetFromStart: number) => void;
+  /**
+   * When `true`, the SDK does NOT buffer the streamed bytes for the
+   * returned value (the download resolves with `null`). Intended for
+   * memory-safe pipelines where `onChunk` writes directly to disk /
+   * IndexedDB / etc.
+   *
+   * Requires `onChunk`; otherwise the bytes are silently dropped.
+   */
+  discardBuffer?: boolean;
 }
 
 class UploadProcess {
@@ -496,6 +532,16 @@ export default class Files {
     });
   }
 
+  /**
+   * Download a file by `fileToken` (v2) or `fileNameWithExtension` (v1).
+   *
+   * Supports resumable downloads: pass `resumeFrom` to send an HTTP `Range`
+   * request and `onChunk` to receive each network chunk as it arrives
+   * (useful for streaming to disk / IndexedDB without buffering the whole
+   * file). Combine with `discardBuffer: true` to opt out of in-memory
+   * accumulation; the returned value is then `null` and the only data
+   * exposed to the caller is via `onChunk`.
+   */
   public download(
     params: FileDownloadParams & Partial<FileDownloadOptions>
   ): ObservablePromise<DownloadResponse> {
@@ -510,7 +556,23 @@ export default class Files {
     const {
       responseType = isBrowserEnvironment() ? "blob" : "arraybuffer",
       progressSubscriber$,
+      resumeFrom,
+      onChunk,
+      discardBuffer,
+      signal,
     } = options;
+
+    if (discardBuffer && onChunk == null) {
+      throw new Error(
+        "files.download: `discardBuffer: true` requires `onChunk` — without it the streamed bytes are silently dropped."
+      );
+    }
+
+    if (resumeFrom != null && (!Number.isFinite(resumeFrom) || resumeFrom < 0)) {
+      throw new Error(
+        `files.download: invalid resumeFrom (${resumeFrom}). Must be a non-negative finite number.`
+      );
+    }
 
     let downloadUrl;
 
@@ -541,9 +603,29 @@ export default class Files {
       };
     }
 
+    const headers: Record<string, string> = {};
+    const startOffset = resumeFrom ?? 0;
+    if (startOffset > 0) {
+      headers["Range"] = `bytes=${startOffset}-`;
+    }
+
+    let receivedInThisCall = 0;
+    const wrappedOnChunk: ((chunk: Uint8Array) => void) | undefined =
+      onChunk != null
+        ? (chunk: Uint8Array) => {
+            const offsetFromStart = startOffset + receivedInThisCall;
+            receivedInThisCall += chunk.byteLength;
+            onChunk(chunk, offsetFromStart);
+          }
+        : undefined;
+
     return this.context.http.get<DownloadResponse>(downloadUrl, {
       responseType,
       onDownloadProgress,
+      onChunk: wrappedOnChunk,
+      discardBuffer,
+      signal,
+      headers: Object.keys(headers).length > 0 ? headers : undefined,
     });
   }
 }
