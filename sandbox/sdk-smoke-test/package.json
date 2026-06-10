@@ -1,0 +1,17 @@
+{
+  "name": "sdk-smoke-test",
+  "private": true,
+  "type": "module",
+  "description": "Consumer-style smoke tests for @sidedrawer/sdk",
+  "scripts": {
+    "test": "node smoke-test.mjs",
+    "dev": "node dev-server.mjs",
+    "dev:browser": "node dev-server.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@sidedrawer/sdk": "file:../.."
+  }
+}
