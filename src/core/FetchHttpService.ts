@@ -1,8 +1,9 @@
-import { Observable } from "rxjs";
+import { map, Observable } from "rxjs";
 
 import { HttpServiceError } from "./HttpServiceError";
 import {
   HttpRequestConfig,
+  HttpResponse,
   HttpServiceConfig,
   SdkProgressEvent,
 } from "./types/HttpRequestConfig";
@@ -145,59 +146,93 @@ function toHttpServiceError(
   return new HttpServiceError(message, code, request, response);
 }
 
+async function readBodyWithProgress(
+  response: Response,
+  onDownloadProgress?: (event: SdkProgressEvent) => void
+): Promise<Uint8Array> {
+  // Streaming path: read chunks and emit progress.
+  // The Content-Length header may be absent for chunked responses; total is then undefined
+  // and consumers should treat progress as "bytes so far, no percentage".
+  const contentLength = response.headers.get("Content-Length");
+  const total = contentLength ? parseInt(contentLength, 10) : undefined;
+  const reader = response.body!.getReader();
+  const chunks: Uint8Array[] = [];
+  let loaded = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+
+    if (value) {
+      chunks.push(value);
+      loaded += value.byteLength;
+      onDownloadProgress?.({ loaded, total });
+    }
+  }
+
+  const merged = new Uint8Array(loaded);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return merged;
+}
+
 async function parseResponseBody(
   response: Response,
   responseType: HttpRequestConfig["responseType"],
   onDownloadProgress?: (event: SdkProgressEvent) => void
 ): Promise<unknown> {
   const type = responseType ?? "json";
+  const canStream = onDownloadProgress != null && response.body != null;
 
   if (type === "blob") {
-    return response.blob();
+    if (!canStream) {
+      return response.blob();
+    }
+    const merged = await readBodyWithProgress(response, onDownloadProgress);
+    const contentType = response.headers.get("Content-Type") ?? undefined;
+    if (typeof Blob !== "undefined") {
+      return contentType
+        ? new Blob([merged.buffer as ArrayBuffer], { type: contentType })
+        : new Blob([merged.buffer as ArrayBuffer]);
+    }
+    // Environments without Blob (older Node) fall back to a Buffer/ArrayBuffer.
+    return typeof Buffer !== "undefined" ? Buffer.from(merged) : merged.buffer;
   }
 
   if (type === "arraybuffer") {
-    const buffer = await response.arrayBuffer();
-
-    if (typeof Buffer !== "undefined") {
-      return Buffer.from(buffer);
+    if (!canStream) {
+      const buffer = await response.arrayBuffer();
+      if (typeof Buffer !== "undefined") {
+        return Buffer.from(buffer);
+      }
+      return buffer;
     }
-
-    return buffer;
+    const merged = await readBodyWithProgress(response, onDownloadProgress);
+    if (typeof Buffer !== "undefined") {
+      return Buffer.from(merged);
+    }
+    return merged.buffer;
   }
 
   if (type === "text") {
-    return response.text();
+    if (!canStream) {
+      return response.text();
+    }
+    const merged = await readBodyWithProgress(response, onDownloadProgress);
+    return new TextDecoder().decode(merged);
   }
 
-  if (onDownloadProgress && response.body) {
-    const contentLength = response.headers.get("Content-Length");
-    const total = contentLength ? parseInt(contentLength, 10) : undefined;
-    const reader = response.body.getReader();
-    const chunks: Uint8Array[] = [];
-    let loaded = 0;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
-
-      if (value) {
-        chunks.push(value);
-        loaded += value.byteLength;
-        onDownloadProgress({ loaded, total });
-      }
-    }
-
-    const merged = new Uint8Array(loaded);
-    let offset = 0;
-    for (const chunk of chunks) {
-      merged.set(chunk, offset);
-      offset += chunk.byteLength;
-    }
-
+  if (canStream) {
+    const merged = await readBodyWithProgress(response, onDownloadProgress);
     const text = new TextDecoder().decode(merged);
+    if (!text) {
+      return null;
+    }
     try {
       return JSON.parse(text);
     } catch {
@@ -270,7 +305,12 @@ function xhrRequest<T>(
   url: string,
   init: RequestInit,
   config: HttpRequestConfig
-): Promise<{ data: T; status: number }> {
+): Promise<{
+  data: T;
+  status: number;
+  statusText: string;
+  headers: Record<string, string>;
+}> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open(init.method ?? "GET", url, true);
@@ -333,7 +373,12 @@ function xhrRequest<T>(
         } catch {
           /* plain text */
         }
-        resolve({ data: data as T, status: xhr.status });
+        resolve({
+          data: data as T,
+          status: xhr.status,
+          statusText: xhr.statusText,
+          headers: responseHeaders,
+        });
         return;
       }
 
@@ -386,8 +431,10 @@ export default class FetchHttpService {
     return privateScope.get(this) as HttpServiceConfig;
   }
 
-  private _requestWrapper<T>(config: HttpRequestConfig): Observable<T> {
-    return new Observable<T>((subscriber) => {
+  private _requestWrapper<T>(
+    config: HttpRequestConfig
+  ): Observable<HttpResponse<T>> {
+    return new Observable<HttpResponse<T>>((subscriber) => {
       const innerController = new AbortController();
       let abortable = true;
 
@@ -435,9 +482,9 @@ export default class FetchHttpService {
 
       const run = async () => {
         try {
-          const data = await this.executeRequest<T>(perRequestConfig);
+          const response = await this.executeRequest<T>(perRequestConfig);
           abortable = false;
-          subscriber.next(data);
+          subscriber.next(response);
           subscriber.complete();
         } catch (err) {
           abortable = false;
@@ -457,7 +504,7 @@ export default class FetchHttpService {
 
   private async executeRequest<T>(
     config: HttpRequestConfig
-  ): Promise<T> {
+  ): Promise<HttpResponse<T>> {
     const url = buildUrl(this.defaults, config);
     const method = (config.method ?? "get").toUpperCase();
     const headers = mergeHeaders(
@@ -475,8 +522,13 @@ export default class FetchHttpService {
     };
 
     if (config.onUploadProgress && typeof XMLHttpRequest !== "undefined") {
-      const { data } = await xhrRequest<T>(url, init, config);
-      return data;
+      const xhrResult = await xhrRequest<T>(url, init, config);
+      return {
+        data: xhrResult.data,
+        status: xhrResult.status,
+        statusText: xhrResult.statusText,
+        headers: xhrResult.headers,
+      };
     }
 
     let response: Response;
@@ -534,11 +586,11 @@ export default class FetchHttpService {
       config.onDownloadProgress
     );
 
-    const responseObject = {
+    const responseObject: HttpResponse<T> = {
       status: response.status,
       statusText: response.statusText,
       headers: headersToRecord(response.headers),
-      data: responseData,
+      data: responseData as T,
     };
 
     if (!response.ok) {
@@ -550,10 +602,25 @@ export default class FetchHttpService {
       );
     }
 
-    return responseData as T;
+    return responseObject;
   }
 
   public request<T>(config: HttpRequestConfig): Observable<T> {
+    return this._requestWrapper<T>(config).pipe(map((r) => r.data));
+  }
+
+  /**
+   * Like `request`, but resolves with the full HTTP response envelope
+   * (`{ data, status, statusText, headers }`) instead of just the body.
+   *
+   * Use this when you need to inspect status codes (e.g. 206 Partial Content
+   * for Range Requests) or response headers (e.g. `Content-Range`,
+   * `Content-Length`, `Accept-Ranges`) — for example when implementing
+   * resumable / chunked downloads on top of the HTTP layer.
+   */
+  public requestWithResponse<T>(
+    config: HttpRequestConfig
+  ): Observable<HttpResponse<T>> {
     return this._requestWrapper<T>(config);
   }
 
@@ -565,8 +632,30 @@ export default class FetchHttpService {
     });
   }
 
+  public getWithResponse<T>(
+    url: string,
+    config?: HttpRequestConfig
+  ): Observable<HttpResponse<T>> {
+    return this.requestWithResponse<T>({
+      ...config,
+      method: "get",
+      url,
+    });
+  }
+
   public delete<T>(url: string, config?: HttpRequestConfig): Observable<T> {
     return this.request<T>({
+      ...config,
+      method: "delete",
+      url,
+    });
+  }
+
+  public deleteWithResponse<T>(
+    url: string,
+    config?: HttpRequestConfig
+  ): Observable<HttpResponse<T>> {
+    return this.requestWithResponse<T>({
       ...config,
       method: "delete",
       url,
@@ -586,12 +675,38 @@ export default class FetchHttpService {
     });
   }
 
+  public postWithResponse<T>(
+    url: string,
+    data: unknown,
+    config?: HttpRequestConfig
+  ): Observable<HttpResponse<T>> {
+    return this.requestWithResponse<T>({
+      ...config,
+      method: "post",
+      url,
+      data,
+    });
+  }
+
   public put<T>(
     url: string,
     data: unknown,
     config?: HttpRequestConfig
   ): Observable<T> {
     return this.request<T>({
+      ...config,
+      method: "put",
+      url,
+      data,
+    });
+  }
+
+  public putWithResponse<T>(
+    url: string,
+    data: unknown,
+    config?: HttpRequestConfig
+  ): Observable<HttpResponse<T>> {
+    return this.requestWithResponse<T>({
       ...config,
       method: "put",
       url,
