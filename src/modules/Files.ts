@@ -1,5 +1,5 @@
 import {
-  from,
+  catchError,
   mergeMap,
   Observable,
   of,
@@ -8,17 +8,61 @@ import {
   Subscriber,
   switchMap,
   tap,
+  throwError,
   toArray,
 } from "rxjs";
 
 import Context from "../core/Context";
 import HttpService from "../core/HttpService";
+import { HttpServiceError } from "../core/HttpServiceError";
 import { ExternalKeys, Metadata } from "../types/base";
 import { Abortable, ObservablePromise } from "../types/core";
 import { RecordFileDetail, RecordFileQueryParams } from "../types/files";
 import { isBrowserEnvironment, isRequired } from "../utils/core";
-import { generateHash } from "../utils/crypto";
+import {
+  createSha256Hasher,
+  generateHash,
+  IncrementalHasher,
+} from "../utils/crypto";
 import { SdkProgressEvent } from "../core/types/HttpRequestConfig";
+
+/**
+ * Error code used when the SDK rejects a file before uploading it because
+ * its size exceeds the caller-provided `maxUploadMBs` limit.
+ */
+export const ERR_FILE_TOO_LARGE = "ERR_FILE_TOO_LARGE";
+
+/**
+ * Error code used when the backend rejects the finalize step (`createRecordFile`)
+ * with a `payload_too_large` message. The backend returns HTTP 409 instead of 413
+ * today, so consumers should rely on this code rather than on the status code.
+ */
+export const ERR_PAYLOAD_TOO_LARGE = "ERR_PAYLOAD_TOO_LARGE";
+
+/**
+ * Thrown synchronously by `Files.upload` when the input file is larger than the
+ * caller-provided `maxUploadMBs` limit. Carries the actual sizes so the consumer
+ * can surface a useful message ("file is 192 MB, limit is 10 MB").
+ *
+ * For backend-side rejections (status 409 + `payload_too_large` message) the SDK
+ * throws an `HttpServiceError` with `code === ERR_PAYLOAD_TOO_LARGE` instead, so
+ * the response body is preserved.
+ */
+export class FileTooLargeError extends Error {
+  public readonly code = ERR_FILE_TOO_LARGE;
+
+  constructor(
+    public readonly fileSizeBytes: number,
+    public readonly maxBytes: number
+  ) {
+    const fileMb = (fileSizeBytes / (1024 * 1024)).toFixed(2);
+    const maxMb = (maxBytes / (1024 * 1024)).toFixed(2);
+    super(
+      `File size ${fileMb} MB exceeds the upload limit of ${maxMb} MB for this SideDrawer.`
+    );
+    this.name = "FileTooLargeError";
+  }
+}
 
 interface UploadProcessParams {
   httpService: HttpService;
@@ -45,6 +89,19 @@ export interface FileUploadOptions extends Abortable {
   maxConcurrency: number;
   progressSubscriber$?: Subject<number>;
   maxChunkSizeBytes: number;
+  /**
+   * Optional client-side file size limit, in megabytes (matches the backend
+   * `subscriptionFeatures.sidedrawer.maxUploadMBs` value). When set, the SDK
+   * validates `file.size` before chunking and throws `FileTooLargeError`
+   * synchronously if the file exceeds it.
+   *
+   * Recommended pattern: the consumer reads `maxUploadMBs` from the
+   * SideDrawer subscription features they already loaded (e.g. the
+   * `/records/sidedrawer/{id}/home` response) and forwards it here so the
+   * SDK fails fast instead of uploading hundreds of MB only to be rejected
+   * at finalize with `payload_too_large` (HTTP 409).
+   */
+  maxUploadMBs?: number;
 }
 
 export interface FileUploadParams extends RecordFileQueryParams {
@@ -84,6 +141,13 @@ class UploadProcess {
   private progressSubscriber$?: Subject<number>;
   private maxChunkSizeBytes: number;
 
+  // Whole-file SHA-256 accumulated incrementally as blocks are read in
+  // `emitBlock`. This avoids the previous "second pass" via
+  // `file.arrayBuffer()` after all blocks were uploaded, which forced
+  // the entire file (potentially hundreds of MB) back into memory just
+  // for the final `checkSum` query param.
+  private fileHasher: IncrementalHasher;
+
   constructor(
     { httpService, file, sidedrawerId, recordId }: UploadProcessParams,
     { progressSubscriber$, maxChunkSizeBytes }: FileUploadOptions
@@ -95,11 +159,18 @@ class UploadProcess {
     this.uploadedBytesByBlockOrder = {};
     this.progressSubscriber$ = progressSubscriber$;
     this.maxChunkSizeBytes = maxChunkSizeBytes;
+    this.fileHasher = createSha256Hasher();
   }
 
-  async getFileChecksum(): Promise<string> {
-    const fileArrayBuffer: ArrayBuffer = await this.file.arrayBuffer();
-    return await generateHash(fileArrayBuffer, "SHA-256");
+  /**
+   * Returns the whole-file SHA-256 accumulated during `emitBlock`.
+   *
+   * Safe to call only after the block emission has completed (the upload
+   * pipeline guarantees this by piping through `toArray()` before
+   * `getFileChecksum()`). Calling it earlier would yield a partial digest.
+   */
+  getFileChecksum(): string {
+    return this.fileHasher.digest();
   }
 
   private async emitBlock(
@@ -119,6 +190,12 @@ class UploadProcess {
     const blob: Blob = this.file.slice(start, end);
     const block: ArrayBuffer = await blob.arrayBuffer();
     const size = block.byteLength;
+
+    // emitBlock is sequential (recursive `await`), so feeding chunks to
+    // the hasher in this order produces the same digest as hashing the
+    // whole file at once. The HTTP upload is parallel via `mergeMap`,
+    // but that happens downstream and does not reorder our reads.
+    this.fileHasher.update(block);
 
     const checksum = await generateHash(block, "SHA-256");
 
@@ -238,17 +315,15 @@ class UploadProcess {
       switchMap((blocks: UploadProcessBlock[]) => {
         blocks.sort((a, b) => a.order - b.order);
 
-        return from(this.getFileChecksum()).pipe(
-          mergeMap((checksum) => {
-            return this.createRecordFile({
-              blocks,
-              record,
-              metadata,
-              externalKeys,
-              checksum,
-            });
-          })
-        );
+        const checksum = this.getFileChecksum();
+
+        return this.createRecordFile({
+          blocks,
+          record,
+          metadata,
+          externalKeys,
+          checksum,
+        });
       })
     );
   }
@@ -286,21 +361,52 @@ class UploadProcess {
       externalKeysJSON = JSON.stringify(externalKeys);
     }
 
-    return this.httpService.post<RecordFileDetail>(
-      `/api/v2/record-files/sidedrawer/sidedrawer-id/${this.sidedrawerId}/records/record-id/${this.recordId}/record-files`,
-      {
-        metadata: metadataJSON,
-        externalKeys: externalKeysJSON,
-        blocks: blocksJSON,
-      },
-      {
-        params: {
-          ...record,
-          checkSum: checksum,
+    return this.httpService
+      .post<RecordFileDetail>(
+        `/api/v2/record-files/sidedrawer/sidedrawer-id/${this.sidedrawerId}/records/record-id/${this.recordId}/record-files`,
+        {
+          metadata: metadataJSON,
+          externalKeys: externalKeysJSON,
+          blocks: blocksJSON,
         },
-      }
-    );
+        {
+          params: {
+            ...record,
+            checkSum: checksum,
+          },
+        }
+      )
+      .pipe(catchError((err: unknown) => throwError(() => enrichFinalizeError(err))));
   }
+}
+
+/**
+ * Maps backend errors at the finalize step (`createRecordFile`) to friendlier
+ * SDK errors. Today the backend returns HTTP 409 with `message: "payload_too_large"`
+ * when the file exceeds the subscription's `maxUploadMBs`; the status code is
+ * misleading (413 would be expected), so we normalise it via `err.code` so
+ * consumers can branch on `ERR_PAYLOAD_TOO_LARGE` regardless of status.
+ */
+function enrichFinalizeError(err: unknown): unknown {
+  if (!(err instanceof HttpServiceError)) {
+    return err;
+  }
+  const response = err.response as
+    | { status?: number; data?: { message?: string; error?: string } }
+    | undefined;
+  const message = response?.data?.message;
+  if (message === "payload_too_large") {
+    const enriched = new HttpServiceError(
+      `Upload rejected by server: payload_too_large (status ${
+        response?.status ?? "?"
+      }). The file exceeds the SideDrawer's upload limit.`,
+      ERR_PAYLOAD_TOO_LARGE,
+      err.request,
+      err.response
+    );
+    return enriched;
+  }
+  return err;
 }
 
 const DEFAULT_FILE_UPLOAD_OPTIONS = {
@@ -321,6 +427,11 @@ export default class Files {
 
   /**
    * Upload file to a record.
+   *
+   * If the caller passes `maxUploadMBs` (typically taken from the SideDrawer
+   * subscription features) the SDK validates `file.size` synchronously and
+   * throws `FileTooLargeError` before chunking — failing fast instead of
+   * uploading every block only to be rejected at finalize.
    */
   public upload(
     params: FileUploadParams & Partial<FileUploadOptions>
@@ -345,6 +456,19 @@ export default class Files {
       ...DEFAULT_FILE_UPLOAD_OPTIONS,
       ...options,
     } satisfies FileUploadOptions;
+
+    // Preflight: fail fast if the file is bigger than what the subscription
+    // allows, instead of uploading every block and then taking a 409
+    // `payload_too_large` at finalize.
+    if (
+      optionsWithDefaults.maxUploadMBs != null &&
+      optionsWithDefaults.maxUploadMBs > 0
+    ) {
+      const maxBytes = optionsWithDefaults.maxUploadMBs * 1024 * 1024;
+      if (file.size > maxBytes) {
+        throw new FileTooLargeError(file.size, maxBytes);
+      }
+    }
 
     const uploadProcess = new UploadProcess(
       {

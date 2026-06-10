@@ -2,7 +2,14 @@ import { Buffer } from "node:buffer";
 
 import "../../extensions/global/crypto.node";
 
-import SideDrawer, { FileUploadOptions, FileUploadParams } from "../..";
+import SideDrawer, {
+  ERR_FILE_TOO_LARGE,
+  ERR_PAYLOAD_TOO_LARGE,
+  FileTooLargeError,
+  FileUploadOptions,
+  FileUploadParams,
+} from "../..";
+import { HttpServiceError } from "../../core/HttpService";
 import nock from "nock";
 import { Subject } from "rxjs";
 
@@ -639,6 +646,153 @@ describe("Files", () => {
         });
     },
     1000 * 5
+  );
+
+  // SPD-3781 Phase 1.5: preflight size validation. The SDK fails fast
+  // synchronously when the caller supplies maxUploadMBs (read from the
+  // SideDrawer subscription features) and the file exceeds it, instead
+  // of uploading every block and being rejected at finalize with HTTP 409.
+  describe("Files.upload preflight maxUploadMBs", () => {
+    const baseParams = {
+      sidedrawerId: "test",
+      recordId: "test",
+      fileName: "preflight-test",
+      uploadTitle: "preflight.bin",
+      fileType: "document" as const,
+    };
+
+    it("throws FileTooLargeError when file.size exceeds maxUploadMBs", () => {
+      const file = generateBlob(11 * 1024 * 1024); // 11 MB
+      let caught: unknown;
+      try {
+        sd.files.upload({
+          ...baseParams,
+          file,
+          maxUploadMBs: 10, // mimics subscriptionFeatures.sidedrawer.maxUploadMBs
+        });
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(FileTooLargeError);
+      const e = caught as FileTooLargeError;
+      expect(e.code).toBe(ERR_FILE_TOO_LARGE);
+      expect(e.fileSizeBytes).toBe(11 * 1024 * 1024);
+      expect(e.maxBytes).toBe(10 * 1024 * 1024);
+      // Message must include both sizes so the consumer can render
+      // something useful without re-parsing the error.
+      expect(e.message).toMatch(/11\.00 MB/);
+      expect(e.message).toMatch(/10\.00 MB/);
+    });
+
+    it("does not throw when file.size is within maxUploadMBs", () => {
+      const file = generateBlob(2 * 1024 * 1024); // 2 MB
+      // No subscribe → no network call. We only assert the sync path
+      // does not throw and returns an Observable to the caller.
+      expect(() => {
+        sd.files.upload({
+          ...baseParams,
+          file,
+          maxUploadMBs: 10,
+        });
+      }).not.toThrow();
+    });
+
+    it("does not throw when maxUploadMBs is omitted, even for big files", () => {
+      const file = generateBlob(50 * 1024 * 1024); // 50 MB
+      expect(() => {
+        sd.files.upload({
+          ...baseParams,
+          file,
+          // no maxUploadMBs → backwards-compatible behaviour, the SDK
+          // skips the preflight and lets the backend decide.
+        });
+      }).not.toThrow();
+    });
+
+    it("treats maxUploadMBs === 0 as disabled", () => {
+      // 0 disables the check on purpose: it would otherwise reject
+      // every non-empty file, which is never what a caller wants when
+      // the subscription value happens to be missing/zero.
+      const file = generateBlob(50 * 1024 * 1024);
+      expect(() => {
+        sd.files.upload({
+          ...baseParams,
+          file,
+          maxUploadMBs: 0,
+        });
+      }).not.toThrow();
+    });
+  });
+
+  // SPD-3781 Phase 1.5: enrich the finalize-step error so consumers
+  // can branch on err.code === ERR_PAYLOAD_TOO_LARGE regardless of the
+  // (currently wrong) HTTP status code the backend returns (409).
+  it(
+    "Files.upload finalize 409 payload_too_large surfaces ERR_PAYLOAD_TOO_LARGE",
+    (done) => {
+      const file = generateBlob(1 * 1024 * 1024 + 1024); // 2 blocks
+
+      // Each block goes 200 — the issue only surfaces at finalize.
+      nock(BASE_URL)
+        .post(
+          `/api/v2/blocks/sidedrawer/sidedrawer-id/test/records/record-id/test/upload`
+        )
+        .query(true)
+        .times(2)
+        .reply(200, (uri) => {
+          const url = new URL(`${BASE_URL}${uri}`);
+          const order = parseInt(
+            url.searchParams.get("order") as string,
+            10
+          );
+          return { hash: `hash-${order}`, order };
+        });
+
+      // Finalize replies with the exact shape the UAT backend returns
+      // for files larger than subscriptionFeatures.sidedrawer.maxUploadMBs:
+      // HTTP 409 + body { statusCode: 409, message: "payload_too_large", error: "conflict_exception" }.
+      nock(BASE_URL)
+        .post(
+          `/api/v2/record-files/sidedrawer/sidedrawer-id/test/records/record-id/test/record-files`
+        )
+        .query(true)
+        .reply(409, {
+          statusCode: 409,
+          message: "payload_too_large",
+          error: "conflict_exception",
+        });
+
+      sd.files
+        .upload({
+          sidedrawerId: "test",
+          recordId: "test",
+          file,
+          fileName: "browser-test",
+          uploadTitle: "big.bin",
+          fileType: "document",
+          maxChunkSizeBytes: 1024 * 1024,
+        })
+        .subscribe({
+          next: () => {
+            // Should not reach success.
+            expect(true).toBe(false);
+          },
+          error: (err: unknown) => {
+            expect(err).toBeInstanceOf(HttpServiceError);
+            const e = err as HttpServiceError & {
+              response?: { status?: number; data?: { message?: string } };
+            };
+            expect(e.code).toBe(ERR_PAYLOAD_TOO_LARGE);
+            expect(e.message).toMatch(/payload_too_large/);
+            // The original response body is preserved so the consumer
+            // can still read the backend's exact wording if needed.
+            expect(e.response?.status).toBe(409);
+            expect(e.response?.data?.message).toBe("payload_too_large");
+            done();
+          },
+        });
+    },
+    1000 * 10
   );
 
   it(
