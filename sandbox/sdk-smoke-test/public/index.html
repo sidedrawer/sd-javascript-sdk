@@ -158,8 +158,37 @@
             <option value="arraybuffer">arraybuffer</option>
           </select>
         </label>
+        <details>
+          <summary>Resumable download (Phase 2)</summary>
+          <div class="filters-grid">
+            <label>
+              Resume from byte
+              <input
+                id="downloadResumeFrom"
+                type="number"
+                min="0"
+                placeholder="0 = full download (default)"
+              />
+            </label>
+          </div>
+          <label class="checkbox-label">
+            <input id="downloadDiscardBuffer" type="checkbox" />
+            Discard buffer (memory-safe stream — chunks logged only, no file saved)
+          </label>
+          <p class="muted">
+            With <code>Resume from byte &gt; 0</code> the SDK sends
+            <code>Range: bytes=N-</code>. When the request succeeds you'll see
+            <code>206 Partial Content</code> and only the remaining bytes come
+            back. With <code>discardBuffer</code> the SDK does not hold the
+            file in memory; chunk count + total bytes are logged but no Blob
+            is produced and no file is saved.
+          </p>
+        </details>
         <div class="actions">
           <button type="button" id="btnDownload">Download file</button>
+          <button type="button" id="btnAbortDownload" disabled>
+            Abort download
+          </button>
         </div>
         <div class="progress-row">
           <label>Download progress</label>

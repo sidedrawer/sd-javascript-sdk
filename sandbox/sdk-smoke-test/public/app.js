@@ -28,7 +28,10 @@ const uploadProgressLabelEl = $("uploadProgressLabel");
 const downloadProgressEl = $("downloadProgress");
 const downloadProgressLabelEl = $("downloadProgressLabel");
 const downloadResponseTypeEl = $("downloadResponseType");
+const downloadResumeFromEl = $("downloadResumeFrom");
+const downloadDiscardBufferEl = $("downloadDiscardBuffer");
 const btnAbortEl = $("btnAbort");
+const btnAbortDownloadEl = $("btnAbortDownload");
 
 const SEARCH_FILTER_IDS = {
   name: "searchName",
@@ -57,6 +60,7 @@ const UPLOAD_OPTION_IDS = {
 };
 
 let uploadAbortController = null;
+let downloadAbortController = null;
 
 function log(message, type = "info") {
   const line = document.createElement("div");
@@ -437,8 +441,21 @@ $("btnDownload").addEventListener("click", async () => {
     return;
   }
 
+  let resumeFrom;
+  const rawResume = downloadResumeFromEl.value.trim();
+  if (rawResume) {
+    const parsed = Number(rawResume);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      log(`files.download — invalid Resume from byte: "${rawResume}"`, "err");
+      return;
+    }
+    resumeFrom = parsed;
+  }
+
+  const discardBuffer = downloadDiscardBufferEl.checked;
+  const responseType = downloadResponseTypeEl.value || "blob";
+
   setDownloadProgress(0);
-  log("files.download — requesting binary…");
 
   const progressSubscriber$ = {
     next(percentage) {
@@ -446,24 +463,56 @@ $("btnDownload").addEventListener("click", async () => {
     },
   };
 
-  const responseType = downloadResponseTypeEl.value || "blob";
+  downloadAbortController = new AbortController();
+  btnAbortDownloadEl.disabled = false;
+
+  let chunkCount = 0;
+  let bytesSeen = 0;
+  let firstOffset = null;
+  let onChunk;
+  if (discardBuffer) {
+    // Memory-safe mode: caller MUST consume the chunks. We just count them.
+    onChunk = (chunk, offsetFromStart) => {
+      if (firstOffset === null) firstOffset = offsetFromStart;
+      chunkCount += 1;
+      bytesSeen += chunk.byteLength;
+    };
+  }
 
   const downloadParams = {
     sidedrawerId,
     recordId,
     responseType,
     progressSubscriber$,
+    signal: downloadAbortController.signal,
   };
 
-  if (fileToken) {
-    downloadParams.fileToken = fileToken;
-  } else {
-    downloadParams.fileNameWithExtension = fileNameWithExtension;
-  }
+  if (fileToken) downloadParams.fileToken = fileToken;
+  else downloadParams.fileNameWithExtension = fileNameWithExtension;
+  if (resumeFrom !== undefined) downloadParams.resumeFrom = resumeFrom;
+  if (discardBuffer) downloadParams.discardBuffer = true;
+  if (onChunk) downloadParams.onChunk = onChunk;
+
+  const tags = [];
+  if (resumeFrom !== undefined) tags.push(`resumeFrom=${resumeFrom}`);
+  if (discardBuffer) tags.push("discardBuffer=true");
+  log(
+    `files.download — requesting binary (responseType=${responseType}${
+      tags.length ? `, ${tags.join(", ")}` : ""
+    })…`
+  );
 
   try {
     const sd = createSdk();
     const file = await sd.files.download(downloadParams);
+
+    if (discardBuffer) {
+      log(
+        `files.download — OK (memory-safe stream: ${chunkCount} chunks, ${bytesSeen} bytes, first offset=${firstOffset}) — no file saved`,
+        "ok"
+      );
+      return;
+    }
 
     const size =
       file instanceof Blob
@@ -475,11 +524,31 @@ $("btnDownload").addEventListener("click", async () => {
 
     saveBlobToDisk(file, filename);
     log(
-      `files.download — OK (${size} bytes, responseType=${responseType}) — saved as "${filename}"`,
+      `files.download — OK (${size} bytes, responseType=${responseType}${
+        resumeFrom !== undefined ? `, resumed from ${resumeFrom}` : ""
+      }) — saved as "${filename}"`,
       "ok"
     );
   } catch (err) {
-    log(`files.download — ${err.message ?? err}`, "err");
+    const code = err?.code;
+    const status = err?.response?.status;
+    const tags = [code && `code=${code}`, status != null && `status=${status}`]
+      .filter(Boolean)
+      .join(" ");
+    log(
+      `files.download — ${err.message ?? err}${tags ? `  [${tags}]` : ""}`,
+      "err"
+    );
+  } finally {
+    downloadAbortController = null;
+    btnAbortDownloadEl.disabled = true;
+  }
+});
+
+btnAbortDownloadEl.addEventListener("click", () => {
+  if (downloadAbortController) {
+    log("files.download — aborting…", "info");
+    downloadAbortController.abort();
   }
 });
 
