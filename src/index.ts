@@ -36,4 +36,5 @@ export * from "./types/base";
 export * from "./types/core";
 export * from "./types/files";
 export * from "./types/records";
+export * from "./storage/IndexedDBDownloadStorage";
 export { SideDrawer };

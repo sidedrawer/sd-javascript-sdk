@@ -25,13 +25,8 @@ const fileNameWithExtensionEl = $("fileNameWithExtension");
 const fileInputEl = $("fileInput");
 const uploadProgressEl = $("uploadProgress");
 const uploadProgressLabelEl = $("uploadProgressLabel");
-const downloadProgressEl = $("downloadProgress");
-const downloadProgressLabelEl = $("downloadProgressLabel");
 const downloadResponseTypeEl = $("downloadResponseType");
-const downloadResumeFromEl = $("downloadResumeFrom");
-const downloadDiscardBufferEl = $("downloadDiscardBuffer");
 const btnAbortEl = $("btnAbort");
-const btnAbortDownloadEl = $("btnAbortDownload");
 
 const SEARCH_FILTER_IDS = {
   name: "searchName",
@@ -60,7 +55,6 @@ const UPLOAD_OPTION_IDS = {
 };
 
 let uploadAbortController = null;
-let downloadAbortController = null;
 
 function log(message, type = "info") {
   const line = document.createElement("div");
@@ -141,31 +135,8 @@ function setUploadProgress(value) {
   uploadProgressLabelEl.textContent = `${value}%`;
 }
 
-function setDownloadProgress(value) {
-  downloadProgressEl.value = value;
-  downloadProgressLabelEl.textContent = `${value}%`;
-}
-
 function resetProgress() {
   setUploadProgress(0);
-  setDownloadProgress(0);
-}
-
-function resolveDownloadFilename(fileToken, fileNameWithExtension) {
-  if (fileNameWithExtension) {
-    return fileNameWithExtension;
-  }
-
-  const uploadedName = fileInputEl.files?.[0]?.name;
-  if (uploadedName) {
-    return uploadedName;
-  }
-
-  if (fileToken) {
-    return `download-${fileToken.slice(0, 8)}.bin`;
-  }
-
-  return `download-${Date.now()}.bin`;
 }
 
 function saveBlobToDisk(data, filename) {
@@ -423,132 +394,269 @@ btnAbortEl.addEventListener("click", () => {
   }
 });
 
-$("btnDownload").addEventListener("click", async () => {
-  const fileToken = fileTokenEl.value.trim();
-  const fileNameWithExtension = fileNameWithExtensionEl.value.trim();
+// ─────────────────────────────────────────────────────────────────────
+// Download (DownloadSession + IndexedDB)
+// ─────────────────────────────────────────────────────────────────────
+//
+// Uses the high-level `DownloadSession` class with an
+// `IndexedDBDownloadStorage` adapter. Chunks and offset are persisted
+// to IDB as they arrive, so closing the tab and re-opening still lets
+// you resume from the same byte via `restoreDownloadSession`.
 
+const sessionStateEl = $("sessionState");
+const sessionIdEl = $("sessionId");
+const sessionOffsetEl = $("sessionOffset");
+const sessionProgressEl = $("sessionProgress");
+const sessionProgressLabelEl = $("sessionProgressLabel");
+const btnSessionStartEl = $("btnSessionStart");
+const btnSessionPauseEl = $("btnSessionPause");
+const btnSessionResumeEl = $("btnSessionResume");
+const btnSessionCancelEl = $("btnSessionCancel");
+const btnSessionListEl = $("btnSessionList");
+const btnSessionRestoreEl = $("btnSessionRestore");
+const btnSessionClearAllEl = $("btnSessionClearAll");
+const sessionPendingSelectEl = $("sessionPendingSelect");
+
+// Lazy IDB storage adapter (created on first interaction so importing
+// the SDK on Node-like environments doesn't try to touch indexedDB).
+// Avoid the name `sessionStorage` — it shadows the browser global.
+let idbStorageAdapter = null;
+function getSessionStorage() {
+  if (!idbStorageAdapter) {
+    idbStorageAdapter = sidedrawer.createIndexedDBDownloadStorage();
+  }
+  return idbStorageAdapter;
+}
+
+let activeSession = null;
+let activeSubs = [];
+function unsubscribeAll() {
+  for (const s of activeSubs) {
+    try {
+      s.unsubscribe();
+    } catch {
+      /* noop */
+    }
+  }
+  activeSubs = [];
+}
+
+function paintSession(state, progress) {
+  sessionStateEl.textContent = state ?? "—";
+  if (progress) {
+    sessionOffsetEl.textContent = progress.total
+      ? `${progress.offset.toLocaleString()} / ${progress.total.toLocaleString()}`
+      : progress.offset.toLocaleString();
+    const pct =
+      progress.percentage != null
+        ? Math.round(progress.percentage)
+        : 0;
+    sessionProgressEl.value = pct;
+    sessionProgressLabelEl.textContent = `${pct}%`;
+  }
+}
+
+function bindSession(session) {
+  unsubscribeAll();
+  activeSession = session;
+  sessionIdEl.textContent = session.id;
+
+  activeSubs.push(
+    session.state$.subscribe((state) => {
+      paintSession(state, session.getProgress());
+      // Mirror state into button enable flags.
+      const isRunning = state === "running";
+      const isPaused = state === "paused";
+      const isTerminal =
+        state === "completed" || state === "canceled" || state === "failed";
+      btnSessionPauseEl.disabled = !isRunning;
+      btnSessionResumeEl.disabled = !isPaused;
+      btnSessionCancelEl.disabled = isTerminal || state === "idle";
+      btnSessionStartEl.disabled = isRunning || isPaused;
+      if (state !== "idle") {
+        log(`DownloadSession[${shortId(session.id)}] → ${state}`, "info");
+      }
+    })
+  );
+
+  activeSubs.push(
+    session.progress$.subscribe((progress) => {
+      paintSession(session.getState(), progress);
+    })
+  );
+
+  activeSubs.push(
+    session.result$.subscribe({
+      next: (payload) => {
+        if (!payload) {
+          log(
+            `DownloadSession[${shortId(session.id)}] — completed (no payload — discarded)`,
+            "ok"
+          );
+          return;
+        }
+        const fileNameInput = document
+          .getElementById("fileNameWithExtension")
+          .value.trim();
+        const fileTokenForName = document
+          .getElementById("fileToken")
+          .value.trim();
+        const filename =
+          fileNameInput ||
+          (fileTokenForName
+            ? `download-${fileTokenForName.slice(0, 8)}.bin`
+            : `session-${shortId(session.id)}.bin`);
+        saveBlobToDisk(payload, filename);
+        log(
+          `DownloadSession[${shortId(session.id)}] — completed, saved as "${filename}"`,
+          "ok"
+        );
+      },
+      error: (err) => {
+        log(
+          `DownloadSession[${shortId(session.id)}] — error: ${err?.message ?? err}`,
+          "err"
+        );
+      },
+    })
+  );
+}
+
+function shortId(id) {
+  return id.length > 40 ? `${id.slice(0, 18)}…${id.slice(-18)}` : id;
+}
+
+btnSessionStartEl.addEventListener("click", () => {
+  const sdk = createSdk();
+  if (!sdk) return;
+  const sidedrawerId = sidedrawerIdEl.value.trim();
+  const recordId = recordIdEl.value.trim();
+  const fileToken = document.getElementById("fileToken").value.trim();
+  const fileNameWithExtension = document
+    .getElementById("fileNameWithExtension")
+    .value.trim();
+  const responseType = downloadResponseTypeEl.value || "blob";
+
+  if (!sidedrawerId || !recordId) {
+    log("DownloadSession — sidedrawerId and recordId are required", "err");
+    return;
+  }
   if (!fileToken && !fileNameWithExtension) {
     log(
-      "files.download — provide a file token (from upload) or file name with extension",
+      "DownloadSession — either fileToken or fileNameWithExtension is required",
       "err"
     );
     return;
   }
 
-  const { sidedrawerId, recordId } = getConfig();
-  if (!sidedrawerId || !recordId) {
-    log("files.download — sidedrawerId and recordId are required", "err");
-    return;
-  }
-
-  let resumeFrom;
-  const rawResume = downloadResumeFromEl.value.trim();
-  if (rawResume) {
-    const parsed = Number(rawResume);
-    if (!Number.isFinite(parsed) || parsed < 0) {
-      log(`files.download — invalid Resume from byte: "${rawResume}"`, "err");
-      return;
-    }
-    resumeFrom = parsed;
-  }
-
-  const discardBuffer = downloadDiscardBufferEl.checked;
-  const responseType = downloadResponseTypeEl.value || "blob";
-
-  setDownloadProgress(0);
-
-  const progressSubscriber$ = {
-    next(percentage) {
-      setDownloadProgress(percentage);
-    },
-  };
-
-  downloadAbortController = new AbortController();
-  btnAbortDownloadEl.disabled = false;
-
-  let chunkCount = 0;
-  let bytesSeen = 0;
-  let firstOffset = null;
-  let onChunk;
-  if (discardBuffer) {
-    // Memory-safe mode: caller MUST consume the chunks. We just count them.
-    onChunk = (chunk, offsetFromStart) => {
-      if (firstOffset === null) firstOffset = offsetFromStart;
-      chunkCount += 1;
-      bytesSeen += chunk.byteLength;
-    };
-  }
-
-  const downloadParams = {
+  const session = sdk.files.createDownloadSession({
     sidedrawerId,
     recordId,
+    fileToken: fileToken || undefined,
+    fileNameWithExtension: fileNameWithExtension || undefined,
     responseType,
-    progressSubscriber$,
-    signal: downloadAbortController.signal,
-  };
-
-  if (fileToken) downloadParams.fileToken = fileToken;
-  else downloadParams.fileNameWithExtension = fileNameWithExtension;
-  if (resumeFrom !== undefined) downloadParams.resumeFrom = resumeFrom;
-  if (discardBuffer) downloadParams.discardBuffer = true;
-  if (onChunk) downloadParams.onChunk = onChunk;
-
-  const tags = [];
-  if (resumeFrom !== undefined) tags.push(`resumeFrom=${resumeFrom}`);
-  if (discardBuffer) tags.push("discardBuffer=true");
+    storage: getSessionStorage(),
+  });
+  bindSession(session);
   log(
-    `files.download — requesting binary (responseType=${responseType}${
-      tags.length ? `, ${tags.join(", ")}` : ""
-    })…`
+    `DownloadSession — created (id=${shortId(session.id)}), starting…`,
+    "info"
   );
+  session.start();
+});
 
+btnSessionPauseEl.addEventListener("click", () => {
+  if (!activeSession) return;
+  log("DownloadSession — pause()", "info");
+  activeSession.pause();
+});
+
+btnSessionResumeEl.addEventListener("click", () => {
+  if (!activeSession) return;
+  log("DownloadSession — resume()", "info");
+  activeSession.resume();
+});
+
+btnSessionCancelEl.addEventListener("click", () => {
+  if (!activeSession) return;
+  log("DownloadSession — cancel() (clears IDB)", "info");
+  activeSession.cancel();
+});
+
+btnSessionListEl.addEventListener("click", async () => {
+  const sdk = createSdk();
+  if (!sdk) return;
   try {
-    const sd = createSdk();
-    const file = await sd.files.download(downloadParams);
-
-    if (discardBuffer) {
-      log(
-        `files.download — OK (memory-safe stream: ${chunkCount} chunks, ${bytesSeen} bytes, first offset=${firstOffset}) — no file saved`,
-        "ok"
-      );
+    const pending = await sdk.files.listPendingDownloads(getSessionStorage());
+    sessionPendingSelectEl.innerHTML = "";
+    if (pending.length === 0) {
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "(no pending sessions in IDB)";
+      sessionPendingSelectEl.appendChild(opt);
+      sessionPendingSelectEl.disabled = true;
+      btnSessionRestoreEl.disabled = true;
+      log("DownloadSession — no pending sessions in IDB", "info");
       return;
     }
-
-    const size =
-      file instanceof Blob
-        ? file.size
-        : file instanceof ArrayBuffer
-          ? file.byteLength
-          : (file?.byteLength ?? 0);
-    const filename = resolveDownloadFilename(fileToken, fileNameWithExtension);
-
-    saveBlobToDisk(file, filename);
+    for (const meta of pending) {
+      const opt = document.createElement("option");
+      opt.value = meta.sessionId;
+      const pct = meta.fileSize
+        ? ` (${Math.round((meta.offset / meta.fileSize) * 100)}%)`
+        : "";
+      opt.textContent = `${shortId(meta.sessionId)} — offset ${meta.offset}${pct}`;
+      sessionPendingSelectEl.appendChild(opt);
+    }
+    sessionPendingSelectEl.disabled = false;
+    btnSessionRestoreEl.disabled = false;
     log(
-      `files.download — OK (${size} bytes, responseType=${responseType}${
-        resumeFrom !== undefined ? `, resumed from ${resumeFrom}` : ""
-      }) — saved as "${filename}"`,
+      `DownloadSession — found ${pending.length} pending session(s) in IDB`,
       "ok"
     );
   } catch (err) {
-    const code = err?.code;
-    const status = err?.response?.status;
-    const tags = [code && `code=${code}`, status != null && `status=${status}`]
-      .filter(Boolean)
-      .join(" ");
-    log(
-      `files.download — ${err.message ?? err}${tags ? `  [${tags}]` : ""}`,
-      "err"
-    );
-  } finally {
-    downloadAbortController = null;
-    btnAbortDownloadEl.disabled = true;
+    log(`DownloadSession — listPendingDownloads error: ${err?.message ?? err}`, "err");
   }
 });
 
-btnAbortDownloadEl.addEventListener("click", () => {
-  if (downloadAbortController) {
-    log("files.download — aborting…", "info");
-    downloadAbortController.abort();
+btnSessionRestoreEl.addEventListener("click", async () => {
+  const sdk = createSdk();
+  if (!sdk) return;
+  const sessionId = sessionPendingSelectEl.value;
+  if (!sessionId) return;
+  try {
+    const session = await sdk.files.restoreDownloadSession(sessionId, {
+      storage: getSessionStorage(),
+    });
+    if (!session) {
+      log(`DownloadSession — no meta for "${sessionId}" in IDB`, "err");
+      return;
+    }
+    bindSession(session);
+    log(
+      `DownloadSession — restored ${shortId(session.id)}, resuming…`,
+      "info"
+    );
+    session.resume();
+  } catch (err) {
+    log(`DownloadSession — restore error: ${err?.message ?? err}`, "err");
+  }
+});
+
+btnSessionClearAllEl.addEventListener("click", async () => {
+  try {
+    const storage = getSessionStorage();
+    const all = await storage.listSessions();
+    for (const meta of all) {
+      await storage.clear(meta.sessionId);
+    }
+    sessionPendingSelectEl.innerHTML =
+      '<option value="">(no pending sessions in IDB)</option>';
+    sessionPendingSelectEl.disabled = true;
+    btnSessionRestoreEl.disabled = true;
+    log(`DownloadSession — cleared ${all.length} session(s) from IDB`, "ok");
+  } catch (err) {
+    log(`DownloadSession — clear error: ${err?.message ?? err}`, "err");
   }
 });
 

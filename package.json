@@ -32,6 +32,7 @@
     "@types/crypto-js": "^4.2.2",
     "@types/jest": "^30.0.0",
     "@types/node": "^24.0.15",
+    "fake-indexeddb": "^6.2.5",
     "jest": "^30.0.4",
     "nock": "^14.0.6",
     "rimraf": "^6.0.1",

@@ -143,13 +143,34 @@
 
       <section class="panel">
         <h2>Files — Download</h2>
+        <p class="muted">
+          Uses
+          <code
+            >sd.files.createDownloadSession({ storage:
+            createIndexedDBDownloadStorage() })</code
+          >. Chunks and offset are persisted to IndexedDB as they arrive,
+          so you can <strong>pause, close the browser tab, reload, and
+          resume from the same byte</strong>. Inspect
+          <strong>Application → IndexedDB → sidedrawer-sdk-downloads</strong>
+          in DevTools to see chunks land.
+        </p>
         <label>
           File token (from upload response <code>fileToken</code>, or v2 download id)
-          <input id="fileToken" type="text" value="" placeholder="Paste fileToken after upload" />
+          <input
+            id="fileToken"
+            type="text"
+            value=""
+            placeholder="Paste fileToken after upload"
+          />
         </label>
         <label>
           Or file name with extension (v1 download path; used only if file token is empty)
-          <input id="fileNameWithExtension" type="text" value="" placeholder="e.g. my-doc.pdf" />
+          <input
+            id="fileNameWithExtension"
+            type="text"
+            value=""
+            placeholder="e.g. my-doc.pdf"
+          />
         </label>
         <label>
           Response type
@@ -158,43 +179,69 @@
             <option value="arraybuffer">arraybuffer</option>
           </select>
         </label>
-        <details>
-          <summary>Resumable download (Phase 2)</summary>
-          <div class="filters-grid">
-            <label>
-              Resume from byte
-              <input
-                id="downloadResumeFrom"
-                type="number"
-                min="0"
-                placeholder="0 = full download (default)"
-              />
-            </label>
+        <div class="state-grid">
+          <div>
+            <label class="muted">State</label>
+            <strong id="sessionState">—</strong>
           </div>
-          <label class="checkbox-label">
-            <input id="downloadDiscardBuffer" type="checkbox" />
-            Discard buffer (memory-safe stream — chunks logged only, no file saved)
-          </label>
-          <p class="muted">
-            With <code>Resume from byte &gt; 0</code> the SDK sends
-            <code>Range: bytes=N-</code>. When the request succeeds you'll see
-            <code>206 Partial Content</code> and only the remaining bytes come
-            back. With <code>discardBuffer</code> the SDK does not hold the
-            file in memory; chunk count + total bytes are logged but no Blob
-            is produced and no file is saved.
-          </p>
-        </details>
-        <div class="actions">
-          <button type="button" id="btnDownload">Download file</button>
-          <button type="button" id="btnAbortDownload" disabled>
-            Abort download
-          </button>
+          <div>
+            <label class="muted">Session ID</label>
+            <code id="sessionId">—</code>
+          </div>
+          <div>
+            <label class="muted">Offset / size</label>
+            <code id="sessionOffset">0</code>
+          </div>
         </div>
         <div class="progress-row">
-          <label>Download progress</label>
-          <progress id="downloadProgress" max="100" value="0"></progress>
-          <span id="downloadProgressLabel">0%</span>
+          <label>Progress</label>
+          <progress id="sessionProgress" max="100" value="0"></progress>
+          <span id="sessionProgressLabel">0%</span>
         </div>
+        <div class="actions">
+          <button type="button" id="btnSessionStart">Download</button>
+          <button type="button" id="btnSessionPause" disabled>Pause</button>
+          <button type="button" id="btnSessionResume" disabled>Resume</button>
+          <button
+            type="button"
+            id="btnSessionCancel"
+            class="btn-danger"
+            disabled
+          >
+            Cancel
+          </button>
+        </div>
+        <details>
+          <summary>Cross-reload resume (after closing the tab)</summary>
+          <p class="muted">
+            After a Pause + tab close + reopen, click
+            <strong>List pending in IDB</strong> to find the persisted
+            session, select it, and click
+            <strong>Restore + resume</strong> to continue from the byte
+            where it stopped.
+          </p>
+          <div class="actions">
+            <button type="button" id="btnSessionList">
+              List pending in IDB
+            </button>
+            <button type="button" id="btnSessionRestore" disabled>
+              Restore + resume selected
+            </button>
+            <button
+              type="button"
+              id="btnSessionClearAll"
+              class="btn-danger"
+            >
+              Clear all IDB sessions
+            </button>
+          </div>
+          <label>
+            Pending sessions
+            <select id="sessionPendingSelect" disabled>
+              <option value="">(click "List pending in IDB")</option>
+            </select>
+          </label>
+        </details>
       </section>
 
       <section class="panel">

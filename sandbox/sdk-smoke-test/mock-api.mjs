@@ -39,7 +39,14 @@ const MIME_TYPES = {
 async function serveStatic(res, filePath) {
   const content = await readFile(filePath);
   const ext = filePath.slice(filePath.lastIndexOf("."));
-  res.writeHead(200, { "Content-Type": MIME_TYPES[ext] ?? "application/octet-stream" });
+  res.writeHead(200, {
+    "Content-Type": MIME_TYPES[ext] ?? "application/octet-stream",
+    // Always serve fresh content during dev so iterations on the SDK
+    // bundle / sandbox JS show up without manual cache busting.
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    Pragma: "no-cache",
+    Expires: "0",
+  });
   res.end(content);
 }
 

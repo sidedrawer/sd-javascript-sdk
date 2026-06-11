@@ -25,6 +25,12 @@ import {
   IncrementalHasher,
 } from "../utils/crypto";
 import { SdkProgressEvent } from "../core/types/HttpRequestConfig";
+import {
+  DownloadSession,
+  type DownloadSessionMeta,
+  type DownloadSessionParams,
+  type DownloadSessionStorage,
+} from "./DownloadSession";
 
 /**
  * Error code used when the SDK rejects a file before uploading it because
@@ -129,7 +135,24 @@ export type FileDownloadResponseType = "blob" | "arraybuffer";
 
 export interface FileDownloadOptions extends Abortable {
   responseType: FileDownloadResponseType;
+  /**
+   * Lossy convenience callback used by simple UIs: receives the
+   * percentage (0–100) for the **current HTTP request**. For Range
+   * requests (`resumeFrom > 0`) this percentage reflects the progress
+   * over the remaining bytes, NOT the full file. Use
+   * {@link onDownloadProgress} if you need the raw `{loaded, total}`
+   * pair to compute full-file percentages yourself.
+   */
   progressSubscriber$?: Subject<number>;
+  /**
+   * Raw progress callback that receives the underlying
+   * `{loaded, total}` pair from the HTTP layer for each downloaded
+   * chunk. `loaded` and `total` reflect this HTTP request only — for
+   * Range requests `total` is `Content-Length` of the partial response.
+   * To get full-file numbers, add `resumeFrom` to both. Prefer this over
+   * {@link progressSubscriber$} when you need precise figures.
+   */
+  onDownloadProgress?: (event: SdkProgressEvent) => void;
   /**
    * Start byte offset for the download. Defaults to `0` (whole file). When
    * `> 0`, the SDK issues an HTTP `Range: bytes=resumeFrom-` request and
@@ -584,13 +607,21 @@ export default class Files {
       return isRequired("fileNameWithExtension or fileToken");
     }
 
+    // Build a composite progress handler that forwards to BOTH the raw
+    // user callback (`options.onDownloadProgress`) and the legacy
+    // percentage-based `progressSubscriber$`. The raw callback runs in
+    // any environment; the percentage path is gated to browsers because
+    // that's where the original implementation was scoped.
+    const userOnDownloadProgress = options.onDownloadProgress;
     let onDownloadProgress:
       | ((progressEvent: SdkProgressEvent) => void)
       | undefined;
 
-    if (isBrowserEnvironment()) {
+    if (userOnDownloadProgress != null || isBrowserEnvironment()) {
       onDownloadProgress = (progressEvent: SdkProgressEvent) => {
+        userOnDownloadProgress?.(progressEvent);
         if (
+          isBrowserEnvironment() &&
           progressSubscriber$ !== undefined &&
           progressEvent.total !== undefined
         ) {
@@ -628,6 +659,94 @@ export default class Files {
       headers: Object.keys(headers).length > 0 ? headers : undefined,
     });
   }
+
+  /**
+   * Create a {@link DownloadSession} — a high-level wrapper around
+   * `download()` that adds pause / resume / cancel semantics, observable
+   * progress, and optional persistence across page reloads.
+   *
+   * When a {@link DownloadSessionStorage} is provided, chunks and offset
+   * are persisted as they arrive so the user can close the browser and
+   * later resume from the same byte. Without storage the session keeps
+   * progress in memory (lost on reload).
+   *
+   * The session starts in `idle` state; call `session.start()` to begin.
+   *
+   * @example
+   * ```ts
+   * const session = sd.files.createDownloadSession({
+   *   sidedrawerId, recordId, fileToken,
+   *   responseType: "blob",
+   *   storage: createIndexedDBDownloadStorage(),
+   * });
+   *
+   * session.state$.subscribe(state => console.log("state ->", state));
+   * session.progress$.subscribe(p => updateBar(p.percentage));
+   * session.result$.subscribe(blob => saveToDisk(blob));
+   *
+   * session.start();
+   * // later... session.pause(); session.resume(); session.cancel();
+   * ```
+   */
+  public createDownloadSession(params: DownloadSessionParams): DownloadSession {
+    return new DownloadSession(this, params);
+  }
+
+  /**
+   * Recreate a {@link DownloadSession} from previously persisted state.
+   * Used on app startup to surface unfinished downloads to the user so
+   * they can decide whether to resume or cancel.
+   *
+   * Returns `null` if no session with that id exists in storage.
+   *
+   * @example
+   * ```ts
+   * const storage = createIndexedDBDownloadStorage();
+   * const pending = await sd.files.listPendingDownloads(storage);
+   * for (const meta of pending) {
+   *   const session = await sd.files.restoreDownloadSession(meta.sessionId, { storage });
+   *   if (session && shouldAutoResume(meta)) session.resume();
+   * }
+   * ```
+   */
+  public async restoreDownloadSession(
+    sessionId: string,
+    options: { storage: DownloadSessionStorage }
+  ): Promise<DownloadSession | null> {
+    const meta = await options.storage.loadMeta(sessionId);
+    if (meta == null) {
+      return null;
+    }
+
+    return new DownloadSession(this, {
+      sidedrawerId: meta.sidedrawerId,
+      recordId: meta.recordId,
+      fileToken: meta.fileToken,
+      fileNameWithExtension: meta.fileNameWithExtension,
+      responseType: meta.responseType,
+      sessionId,
+      storage: options.storage,
+    });
+  }
+
+  /**
+   * List every download session currently persisted in the given storage.
+   * Use on app startup to discover unfinished downloads. Each returned
+   * meta carries the original parameters plus the last persisted offset.
+   */
+  public async listPendingDownloads(
+    storage: DownloadSessionStorage
+  ): Promise<DownloadSessionMeta[]> {
+    return storage.listSessions();
+  }
 }
 
 export { Files };
+export {
+  DownloadSession,
+  type DownloadSessionMeta,
+  type DownloadSessionParams,
+  type DownloadSessionProgress,
+  type DownloadSessionState,
+  type DownloadSessionStorage,
+} from "./DownloadSession";
