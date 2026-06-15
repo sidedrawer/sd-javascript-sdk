@@ -1,5 +1,7 @@
 import {
   catchError,
+  defer,
+  from,
   mergeMap,
   Observable,
   of,
@@ -31,10 +33,16 @@ import {
   type DownloadSessionParams,
   type DownloadSessionStorage,
 } from "./DownloadSession";
+import { SubscriptionFeaturesService } from "./SubscriptionFeatures";
 
 /**
  * Error code used when the SDK rejects a file before uploading it because
- * its size exceeds the caller-provided `maxUploadMBs` limit.
+ * its size exceeds the SideDrawer's `sidedrawer.maxUploadMBs` subscription
+ * feature (fetched by the SDK from
+ * `/api/v1/subscriptions/features/sidedrawer-id/{sidedrawerId}`).
+ *
+ * Callers that want to bypass this preflight (e.g. for trusted internal
+ * tools) can pass `skipSizeCheck: true` to `Files.upload`.
  */
 export const ERR_FILE_TOO_LARGE = "ERR_FILE_TOO_LARGE";
 
@@ -46,9 +54,10 @@ export const ERR_FILE_TOO_LARGE = "ERR_FILE_TOO_LARGE";
 export const ERR_PAYLOAD_TOO_LARGE = "ERR_PAYLOAD_TOO_LARGE";
 
 /**
- * Thrown synchronously by `Files.upload` when the input file is larger than the
- * caller-provided `maxUploadMBs` limit. Carries the actual sizes so the consumer
- * can surface a useful message ("file is 192 MB, limit is 10 MB").
+ * Thrown by `Files.upload` when the input file is larger than the
+ * SideDrawer's `sidedrawer.maxUploadMBs` subscription limit. Carries the
+ * actual sizes so the consumer can surface a useful message
+ * ("file is 192 MB, limit is 10 MB").
  *
  * For backend-side rejections (status 409 + `payload_too_large` message) the SDK
  * throws an `HttpServiceError` with `code === ERR_PAYLOAD_TOO_LARGE` instead, so
@@ -96,18 +105,20 @@ export interface FileUploadOptions extends Abortable {
   progressSubscriber$?: Subject<number>;
   maxChunkSizeBytes: number;
   /**
-   * Optional client-side file size limit, in megabytes (matches the backend
-   * `subscriptionFeatures.sidedrawer.maxUploadMBs` value). When set, the SDK
-   * validates `file.size` before chunking and throws `FileTooLargeError`
-   * synchronously if the file exceeds it.
+   * When `true`, the SDK skips the preflight upload size check entirely:
+   * it does NOT call `/api/v1/subscriptions/features/sidedrawer-id/{id}`
+   * and does NOT throw `FileTooLargeError` before chunking. Use only for
+   * trusted callers where the backend's `payload_too_large` rejection at
+   * finalize is acceptable as the sole safety net.
    *
-   * Recommended pattern: the consumer reads `maxUploadMBs` from the
-   * SideDrawer subscription features they already loaded (e.g. the
-   * `/records/sidedrawer/{id}/home` response) and forwards it here so the
-   * SDK fails fast instead of uploading hundreds of MB only to be rejected
-   * at finalize with `payload_too_large` (HTTP 409).
+   * Defaults to `false`: the SDK fetches the SideDrawer's
+   * `sidedrawer.maxUploadMBs` subscription feature (cached in memory for
+   * 5 minutes) and rejects the upload synchronously if the file exceeds it.
+   * If the features call itself fails (network, 404, etc.) the SDK fails
+   * open: it logs a warning and lets the upload proceed, so the backend
+   * remains the source of truth.
    */
-  maxUploadMBs?: number;
+  skipSizeCheck?: boolean;
 }
 
 export interface FileUploadParams extends RecordFileQueryParams {
@@ -472,6 +483,7 @@ const DEFAULT_FILE_UPLOAD_OPTIONS = {
   maxRetries: 2,
   maxConcurrency: 4,
   maxChunkSizeBytes: 4 * 1024 * 1024,
+  skipSizeCheck: false,
 } satisfies FileUploadOptions;
 
 /**
@@ -479,18 +491,32 @@ const DEFAULT_FILE_UPLOAD_OPTIONS = {
  */
 export default class Files {
   private context: Context;
+  private subscriptionFeatures: SubscriptionFeaturesService;
 
-  constructor(context: Context) {
+  constructor(
+    context: Context,
+    subscriptionFeatures?: SubscriptionFeaturesService
+  ) {
     this.context = context;
+    this.subscriptionFeatures =
+      subscriptionFeatures ?? new SubscriptionFeaturesService(context);
   }
 
   /**
    * Upload file to a record.
    *
-   * If the caller passes `maxUploadMBs` (typically taken from the SideDrawer
-   * subscription features) the SDK validates `file.size` synchronously and
-   * throws `FileTooLargeError` before chunking — failing fast instead of
-   * uploading every block only to be rejected at finalize.
+   * Preflight behaviour (controlled by `skipSizeCheck`, default `false`):
+   *
+   * - `skipSizeCheck: false` — the SDK fetches the SideDrawer's
+   *   `sidedrawer.maxUploadMBs` from
+   *   `/api/v1/subscriptions/features/sidedrawer-id/{id}` (cached in memory
+   *   for 5 minutes) and throws {@link FileTooLargeError} synchronously if
+   *   `file.size` exceeds it. If the features call itself fails the SDK
+   *   fails open: it logs a warning and proceeds with the upload, letting
+   *   the backend's finalize step act as the authoritative gate
+   *   ({@link ERR_PAYLOAD_TOO_LARGE}).
+   * - `skipSizeCheck: true` — the SDK does NOT call the features endpoint
+   *   and does NOT validate the size client-side. Use for trusted callers.
    */
   public upload(
     params: FileUploadParams & Partial<FileUploadOptions>
@@ -516,19 +542,6 @@ export default class Files {
       ...options,
     } satisfies FileUploadOptions;
 
-    // Preflight: fail fast if the file is bigger than what the subscription
-    // allows, instead of uploading every block and then taking a 409
-    // `payload_too_large` at finalize.
-    if (
-      optionsWithDefaults.maxUploadMBs != null &&
-      optionsWithDefaults.maxUploadMBs > 0
-    ) {
-      const maxBytes = optionsWithDefaults.maxUploadMBs * 1024 * 1024;
-      if (file.size > maxBytes) {
-        throw new FileTooLargeError(file.size, maxBytes);
-      }
-    }
-
     const uploadProcess = new UploadProcess(
       {
         httpService: this.context.http,
@@ -539,20 +552,65 @@ export default class Files {
       optionsWithDefaults
     );
 
-    return uploadProcess.upload({
-      record: {
-        fileName,
-        uploadTitle,
-        fileType,
-        displayType,
-        envelopeId,
-        correlationId,
-        fileExtension,
-      },
-      metadata,
-      externalKeys,
-      options: optionsWithDefaults,
-    });
+    const runUpload = () =>
+      uploadProcess.upload({
+        record: {
+          fileName,
+          uploadTitle,
+          fileType,
+          displayType,
+          envelopeId,
+          correlationId,
+          fileExtension,
+        },
+        metadata,
+        externalKeys,
+        options: optionsWithDefaults,
+      });
+
+    return defer(() =>
+      from(
+        this.preflightSizeCheck(
+          sidedrawerId,
+          file,
+          optionsWithDefaults.skipSizeCheck ?? false
+        )
+      ).pipe(switchMap(() => runUpload()))
+    ) as ObservablePromise<RecordFileDetail>;
+  }
+
+  /**
+   * Resolves once the preflight upload-size check has completed (or been
+   * skipped). Throws {@link FileTooLargeError} when the file exceeds the
+   * SideDrawer's `sidedrawer.maxUploadMBs`. Network failures while fetching
+   * the subscription features are swallowed (logged as a warning) so the
+   * upload still proceeds — the backend remains the authoritative gate via
+   * `payload_too_large` at finalize.
+   */
+  private async preflightSizeCheck(
+    sidedrawerId: string,
+    file: File | Blob,
+    skipSizeCheck: boolean
+  ): Promise<void> {
+    if (skipSizeCheck) return;
+
+    let maxMBs: number | null = null;
+    try {
+      maxMBs = await this.subscriptionFeatures.getMaxUploadMBs(sidedrawerId);
+    } catch (err) {
+      console.warn(
+        "[SideDrawer SDK] Could not fetch subscription features for upload size check; allowing upload. Backend will still enforce the limit at finalize.",
+        err
+      );
+      return;
+    }
+
+    if (maxMBs == null) return;
+
+    const maxBytes = maxMBs * 1024 * 1024;
+    if (file.size > maxBytes) {
+      throw new FileTooLargeError(file.size, maxBytes);
+    }
   }
 
   /**
