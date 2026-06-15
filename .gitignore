@@ -132,3 +132,6 @@ dist
 
 temp/
 .sfdx/
+
+# Local smoke-test sandbox (not shipped, dev-only)
+sandbox/
