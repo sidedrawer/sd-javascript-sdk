@@ -689,8 +689,27 @@ export default class Files {
    * // later... session.pause(); session.resume(); session.cancel();
    * ```
    */
-  public createDownloadSession(params: DownloadSessionParams): DownloadSession {
-    return new DownloadSession(this, params);
+  public createDownloadSession(
+    params: Omit<DownloadSessionParams, "userId"> & { userId?: string }
+  ): DownloadSession {
+    const userId = this.resolveUserId(params.userId);
+    return new DownloadSession(this, { ...params, userId });
+  }
+
+  /**
+   * Resolves the userId used to scope persisted download sessions.
+   * Prefers an explicit value from the caller, falls back to the `sub`
+   * claim decoded from the configured JWT access token. Throws when
+   * neither is available so the SDK never silently writes session
+   * chunks under a missing/empty owner.
+   */
+  public resolveUserId(explicit?: string | null): string {
+    if (explicit) return explicit;
+    const fromToken = this.context.userId;
+    if (fromToken) return fromToken;
+    throw new Error(
+      "Could not determine the current userId. Pass `userId` explicitly or configure the SDK with a JWT access token that contains a `sub` claim."
+    );
   }
 
   /**
@@ -712,18 +731,14 @@ export default class Files {
    */
   public async restoreDownloadSession(
     sessionId: string,
-    options: { storage: DownloadSessionStorage; userId: string }
+    options: { storage: DownloadSessionStorage; userId?: string }
   ): Promise<DownloadSession | null> {
-    if (!options?.userId) {
-      throw new Error(
-        "Files.restoreDownloadSession: `userId` is required."
-      );
-    }
+    const userId = this.resolveUserId(options.userId);
     const meta = await options.storage.loadMeta(sessionId);
     if (meta == null) {
       return null;
     }
-    if (meta.userId !== options.userId) {
+    if (meta.userId !== userId) {
       return null;
     }
 
@@ -748,31 +763,24 @@ export default class Files {
    */
   public async listPendingDownloads(
     storage: DownloadSessionStorage,
-    options: { userId: string }
+    options: { userId?: string } = {}
   ): Promise<DownloadSessionMeta[]> {
-    if (!options?.userId) {
-      throw new Error(
-        "Files.listPendingDownloads: `userId` is required."
-      );
-    }
-    return storage.listSessions(options.userId);
+    const userId = this.resolveUserId(options.userId);
+    return storage.listSessions(userId);
   }
 
   /**
    * Delete every persisted download session belonging to the given user.
    * Intended for logout / account-switch flows on shared devices so the
-   * next user does not inherit chunks they don't own.
+   * next user does not inherit chunks they don't own. When `userId` is
+   * omitted the SDK uses the userId derived from the configured JWT.
    */
   public async clearDownloadsForUser(
     storage: DownloadSessionStorage,
-    userId: string
+    userId?: string
   ): Promise<void> {
-    if (!userId) {
-      throw new Error(
-        "Files.clearDownloadsForUser: `userId` is required."
-      );
-    }
-    await storage.clearAllForUser(userId);
+    const resolved = this.resolveUserId(userId);
+    await storage.clearAllForUser(resolved);
   }
 }
 

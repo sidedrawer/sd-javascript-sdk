@@ -144,25 +144,63 @@ describe("DownloadSession", () => {
       expect(s.id).toContain("file.pdf");
     });
 
-    it("throws when userId is missing or empty", () => {
-      const sd = new SideDrawer({ baseUrl: BASE_URL, accessToken: "t" });
+    it("throws when no userId can be resolved (no explicit value, opaque token)", () => {
+      const sd = new SideDrawer({ baseUrl: BASE_URL, accessToken: "opaque" });
       expect(() =>
         sd.files.createDownloadSession({
-          userId: "",
           sidedrawerId: "sd1",
           recordId: "rec1",
           fileToken: "tok1",
         })
       ).toThrow(/userId/i);
-      expect(() =>
-        sd.files.createDownloadSession({
-          // @ts-expect-error intentionally bad input
-          userId: undefined,
-          sidedrawerId: "sd1",
-          recordId: "rec1",
-          fileToken: "tok1",
-        })
-      ).toThrow(/userId/i);
+    });
+
+    it("derives userId from the JWT `sub` claim when not passed explicitly", () => {
+      const header = Buffer.from(JSON.stringify({ alg: "none" }))
+        .toString("base64")
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/g, "");
+      const body = Buffer.from(JSON.stringify({ sub: "u-from-jwt" }))
+        .toString("base64")
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/g, "");
+      const sd = new SideDrawer({
+        baseUrl: BASE_URL,
+        accessToken: `${header}.${body}.sig`,
+      });
+      const session = sd.files.createDownloadSession({
+        sidedrawerId: "sd1",
+        recordId: "rec1",
+        fileToken: "tok1",
+      });
+      expect(session.id).toContain("u-from-jwt");
+    });
+
+    it("explicit userId overrides the JWT-derived value", () => {
+      const header = Buffer.from(JSON.stringify({ alg: "none" }))
+        .toString("base64")
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/g, "");
+      const body = Buffer.from(JSON.stringify({ sub: "u-jwt" }))
+        .toString("base64")
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/g, "");
+      const sd = new SideDrawer({
+        baseUrl: BASE_URL,
+        accessToken: `${header}.${body}.sig`,
+      });
+      const session = sd.files.createDownloadSession({
+        userId: "u-explicit",
+        sidedrawerId: "sd1",
+        recordId: "rec1",
+        fileToken: "tok1",
+      });
+      expect(session.id).toContain("u-explicit");
+      expect(session.id).not.toContain("u-jwt");
     });
   });
 
@@ -455,12 +493,11 @@ describe("DownloadSession", () => {
       expect(unknownUser).toEqual([]);
     });
 
-    it("listPendingDownloads throws when userId is missing", async () => {
-      const sd = new SideDrawer({ baseUrl: BASE_URL, accessToken: "t" });
+    it("listPendingDownloads throws when no userId can be resolved", async () => {
+      const sd = new SideDrawer({ baseUrl: BASE_URL, accessToken: "opaque" });
       const storage = createMemoryStorage();
       await expect(
-        // @ts-expect-error intentionally bad call
-        sd.files.listPendingDownloads(storage, {})
+        sd.files.listPendingDownloads(storage)
       ).rejects.toThrow(/userId/i);
     });
 
@@ -498,9 +535,12 @@ describe("DownloadSession", () => {
       expect(await storage.loadChunks("b")).toHaveLength(1);
     });
 
-    it("clearDownloadsForUser throws when userId is missing", async () => {
-      const sd = new SideDrawer({ baseUrl: BASE_URL, accessToken: "t" });
+    it("clearDownloadsForUser throws when no userId can be resolved", async () => {
+      const sd = new SideDrawer({ baseUrl: BASE_URL, accessToken: "opaque" });
       const storage = createMemoryStorage();
+      await expect(
+        sd.files.clearDownloadsForUser(storage)
+      ).rejects.toThrow(/userId/i);
       await expect(
         sd.files.clearDownloadsForUser(storage, "")
       ).rejects.toThrow(/userId/i);

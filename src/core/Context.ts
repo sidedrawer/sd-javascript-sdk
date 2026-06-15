@@ -1,4 +1,5 @@
 import HttpService from "./HttpService";
+import { decodeJwtSub } from "../utils/jwt";
 
 export interface SideDrawerConfig {
   accessToken?: string;
@@ -42,9 +43,12 @@ export default class Context {
       },
     });
 
+    const userId = decodeJwtSub(configWithDefaults.accessToken);
+
     privateScope.set(this, {
       configWithDefaults,
       http,
+      userId,
     });
   }
 
@@ -56,6 +60,16 @@ export default class Context {
   /** @ignore */
   get http(): HttpService {
     return privateScope.get(this).http;
+  }
+
+  /**
+   * User id derived from the `sub` claim of the configured access token
+   * when it is a JWT. Returns `null` for opaque tokens, missing tokens,
+   * or JWTs without a `sub` claim. Refreshed automatically when
+   * {@link refresh} is called with a new access token.
+   */
+  get userId(): string | null {
+    return privateScope.get(this).userId ?? null;
   }
 
   /** @ignore */

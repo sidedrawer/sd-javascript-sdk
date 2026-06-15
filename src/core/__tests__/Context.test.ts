@@ -46,4 +46,43 @@ describe("core", () => {
     expect(context.http).not.toEqual(undefined);
     expect(context.http).toBeInstanceOf(HttpService);
   });
+
+  describe("Context.userId (JWT `sub` decoding)", () => {
+    function encodeBase64Url(input: string): string {
+      return Buffer.from(input, "utf-8")
+        .toString("base64")
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/g, "");
+    }
+    function jwtFor(sub: string): string {
+      const header = encodeBase64Url(JSON.stringify({ alg: "none" }));
+      const body = encodeBase64Url(JSON.stringify({ sub }));
+      return `${header}.${body}.sig`;
+    }
+
+    it("returns null when no access token is configured", () => {
+      const c = new Context({});
+      expect(c.userId).toBeNull();
+    });
+
+    it("returns null when the access token is opaque (non-JWT)", () => {
+      const c = new Context({ accessToken: "opaque-token-value" });
+      expect(c.userId).toBeNull();
+    });
+
+    it("returns the JWT sub claim", () => {
+      const c = new Context({ accessToken: jwtFor("user-123") });
+      expect(c.userId).toBe("user-123");
+    });
+
+    it("recomputes userId when refresh() is called with a new token", () => {
+      const c = new Context({ accessToken: jwtFor("alice") });
+      expect(c.userId).toBe("alice");
+      c.refresh({ accessToken: jwtFor("bob") });
+      expect(c.userId).toBe("bob");
+      c.refresh({ accessToken: "opaque" });
+      expect(c.userId).toBeNull();
+    });
+  });
 });
