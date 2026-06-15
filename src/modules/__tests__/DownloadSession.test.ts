@@ -49,7 +49,6 @@ function createMemoryStorage(): DownloadSessionStorage & {
     },
     async saveChunk(id, offset, chunk) {
       if (!chunks[id]) chunks[id] = [];
-      // Clone so caller mutations don't leak.
       const copy = new Uint8Array(chunk.byteLength);
       copy.set(chunk);
       chunks[id].push({ offset, data: copy });
@@ -61,8 +60,18 @@ function createMemoryStorage(): DownloadSessionStorage & {
       delete meta[id];
       delete chunks[id];
     },
-    async listSessions() {
-      return Object.values(meta);
+    async listSessions(userId) {
+      const all = Object.values(meta).filter((m) => m.userId != null);
+      if (userId == null) return all;
+      return all.filter((m) => m.userId === userId);
+    },
+    async clearAllForUser(userId) {
+      for (const [id, m] of Object.entries(meta)) {
+        if (m.userId === userId) {
+          delete meta[id];
+          delete chunks[id];
+        }
+      }
     },
     __debugDump() {
       return { meta, chunks };
@@ -72,27 +81,50 @@ function createMemoryStorage(): DownloadSessionStorage & {
 
 describe("DownloadSession", () => {
   describe("ID derivation", () => {
-    it("derives a deterministic id from sidedrawerId + recordId + fileToken", () => {
+    it("derives a deterministic id from userId + sidedrawerId + recordId + fileToken", () => {
       const sd = new SideDrawer({ baseUrl: BASE_URL, accessToken: "t" });
       const a = sd.files.createDownloadSession({
+        userId: "u1",
         sidedrawerId: "sd1",
         recordId: "rec1",
         fileToken: "tok1",
       });
       const b = sd.files.createDownloadSession({
+        userId: "u1",
         sidedrawerId: "sd1",
         recordId: "rec1",
         fileToken: "tok1",
       });
       expect(a.id).toBe(b.id);
+      expect(a.id).toContain("u1");
       expect(a.id).toContain("sd1");
       expect(a.id).toContain("rec1");
       expect(a.id).toContain("tok1");
     });
 
+    it("produces different ids for different users on the same file", () => {
+      const sd = new SideDrawer({ baseUrl: BASE_URL, accessToken: "t" });
+      const a = sd.files.createDownloadSession({
+        userId: "u-alice",
+        sidedrawerId: "sd1",
+        recordId: "rec1",
+        fileToken: "tok1",
+      });
+      const b = sd.files.createDownloadSession({
+        userId: "u-bob",
+        sidedrawerId: "sd1",
+        recordId: "rec1",
+        fileToken: "tok1",
+      });
+      expect(a.id).not.toBe(b.id);
+      expect(a.id).toContain("u-alice");
+      expect(b.id).toContain("u-bob");
+    });
+
     it("honors a custom sessionId", () => {
       const sd = new SideDrawer({ baseUrl: BASE_URL, accessToken: "t" });
       const s = sd.files.createDownloadSession({
+        userId: "u1",
         sidedrawerId: "sd1",
         recordId: "rec1",
         fileToken: "tok1",
@@ -104,11 +136,33 @@ describe("DownloadSession", () => {
     it("falls back to fileNameWithExtension when no fileToken", () => {
       const sd = new SideDrawer({ baseUrl: BASE_URL, accessToken: "t" });
       const s = sd.files.createDownloadSession({
+        userId: "u1",
         sidedrawerId: "sd1",
         recordId: "rec1",
         fileNameWithExtension: "file.pdf",
       });
       expect(s.id).toContain("file.pdf");
+    });
+
+    it("throws when userId is missing or empty", () => {
+      const sd = new SideDrawer({ baseUrl: BASE_URL, accessToken: "t" });
+      expect(() =>
+        sd.files.createDownloadSession({
+          userId: "",
+          sidedrawerId: "sd1",
+          recordId: "rec1",
+          fileToken: "tok1",
+        })
+      ).toThrow(/userId/i);
+      expect(() =>
+        sd.files.createDownloadSession({
+          // @ts-expect-error intentionally bad input
+          userId: undefined,
+          sidedrawerId: "sd1",
+          recordId: "rec1",
+          fileToken: "tok1",
+        })
+      ).toThrow(/userId/i);
     });
   });
 
@@ -116,6 +170,7 @@ describe("DownloadSession", () => {
     it("starts in idle and refuses to start from a terminal state", async () => {
       const fakeFiles = { download: () => of(null) } as unknown as Files;
       const session = new DownloadSession(fakeFiles, {
+        userId: "u1",
         sidedrawerId: "sd",
         recordId: "rec",
         fileToken: "tok",
@@ -134,6 +189,7 @@ describe("DownloadSession", () => {
         download: () => of(generateBlob(100)),
       } as unknown as Files;
       const session = new DownloadSession(fakeFiles, {
+        userId: "u1",
         sidedrawerId: "sd",
         recordId: "rec",
         fileToken: "tok",
@@ -154,6 +210,7 @@ describe("DownloadSession", () => {
       const storage = createMemoryStorage();
       await storage.saveMeta("custom", {
         sessionId: "custom",
+        userId: "u1",
         sidedrawerId: "sd",
         recordId: "rec",
         fileToken: "tok",
@@ -162,6 +219,7 @@ describe("DownloadSession", () => {
         updatedAt: 1,
       });
       const session = new DownloadSession(fakeFiles, {
+        userId: "u1",
         sidedrawerId: "sd",
         recordId: "rec",
         fileToken: "tok",
@@ -222,6 +280,7 @@ describe("DownloadSession", () => {
       } as unknown as Files;
       const storage = createMemoryStorage();
       const session = new DownloadSession(fakeFiles, {
+        userId: "u1",
         sidedrawerId: "sd",
         recordId: "rec",
         fileToken: "tok",
@@ -269,6 +328,7 @@ describe("DownloadSession", () => {
       } as unknown as Files;
       const storage = createMemoryStorage();
       const session = new DownloadSession(fakeFiles, {
+        userId: "u1",
         sidedrawerId: "sd",
         recordId: "rec",
         fileToken: "tok",
@@ -292,6 +352,7 @@ describe("DownloadSession", () => {
       const storage = createMemoryStorage();
       await storage.saveMeta("persisted-id", {
         sessionId: "persisted-id",
+        userId: "u1",
         sidedrawerId: "sdX",
         recordId: "recX",
         fileToken: "tokX",
@@ -304,6 +365,7 @@ describe("DownloadSession", () => {
 
       const restored = await sd.files.restoreDownloadSession("persisted-id", {
         storage,
+        userId: "u1",
       });
       expect(restored).not.toBeNull();
       expect(restored!.id).toBe("persisted-id");
@@ -313,15 +375,39 @@ describe("DownloadSession", () => {
     it("restoreDownloadSession returns null when meta missing", async () => {
       const sd = new SideDrawer({ baseUrl: BASE_URL, accessToken: "t" });
       const storage = createMemoryStorage();
-      const restored = await sd.files.restoreDownloadSession("nope", { storage });
+      const restored = await sd.files.restoreDownloadSession("nope", {
+        storage,
+        userId: "u1",
+      });
       expect(restored).toBeNull();
     });
 
-    it("listPendingDownloads surfaces persisted sessions", async () => {
+    it("restoreDownloadSession returns null when meta belongs to another user", async () => {
+      const sd = new SideDrawer({ baseUrl: BASE_URL, accessToken: "t" });
+      const storage = createMemoryStorage();
+      await storage.saveMeta("alice-session", {
+        sessionId: "alice-session",
+        userId: "u-alice",
+        sidedrawerId: "sdX",
+        recordId: "recX",
+        fileToken: "tokX",
+        offset: 100,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      const restored = await sd.files.restoreDownloadSession(
+        "alice-session",
+        { storage, userId: "u-bob" }
+      );
+      expect(restored).toBeNull();
+    });
+
+    it("listPendingDownloads filters by userId and ignores legacy sessions", async () => {
       const sd = new SideDrawer({ baseUrl: BASE_URL, accessToken: "t" });
       const storage = createMemoryStorage();
       await storage.saveMeta("a", {
         sessionId: "a",
+        userId: "u-alice",
         sidedrawerId: "sd",
         recordId: "rec1",
         fileToken: "t1",
@@ -331,6 +417,7 @@ describe("DownloadSession", () => {
       });
       await storage.saveMeta("b", {
         sessionId: "b",
+        userId: "u-bob",
         sidedrawerId: "sd",
         recordId: "rec2",
         fileToken: "t2",
@@ -338,9 +425,85 @@ describe("DownloadSession", () => {
         createdAt: 1,
         updatedAt: 1,
       });
-      const pending = await sd.files.listPendingDownloads(storage);
-      expect(pending).toHaveLength(2);
-      expect(pending.map((p) => p.sessionId).sort()).toEqual(["a", "b"]);
+      await storage.saveMeta("legacy", {
+        // @ts-expect-error simulating legacy meta without userId
+        userId: undefined,
+        sessionId: "legacy",
+        sidedrawerId: "sd",
+        recordId: "rec-old",
+        fileToken: "t-old",
+        offset: 50,
+        createdAt: 0,
+        updatedAt: 0,
+      });
+
+      const alicePending = await sd.files.listPendingDownloads(storage, {
+        userId: "u-alice",
+      });
+      expect(alicePending).toHaveLength(1);
+      expect(alicePending[0].sessionId).toBe("a");
+
+      const bobPending = await sd.files.listPendingDownloads(storage, {
+        userId: "u-bob",
+      });
+      expect(bobPending).toHaveLength(1);
+      expect(bobPending[0].sessionId).toBe("b");
+
+      const unknownUser = await sd.files.listPendingDownloads(storage, {
+        userId: "u-mallory",
+      });
+      expect(unknownUser).toEqual([]);
+    });
+
+    it("listPendingDownloads throws when userId is missing", async () => {
+      const sd = new SideDrawer({ baseUrl: BASE_URL, accessToken: "t" });
+      const storage = createMemoryStorage();
+      await expect(
+        // @ts-expect-error intentionally bad call
+        sd.files.listPendingDownloads(storage, {})
+      ).rejects.toThrow(/userId/i);
+    });
+
+    it("clearDownloadsForUser removes only the given user's sessions", async () => {
+      const sd = new SideDrawer({ baseUrl: BASE_URL, accessToken: "t" });
+      const storage = createMemoryStorage();
+      await storage.saveMeta("a", {
+        sessionId: "a",
+        userId: "u-alice",
+        sidedrawerId: "sd",
+        recordId: "rec1",
+        fileToken: "t1",
+        offset: 100,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      await storage.saveChunk("a", 0, new Uint8Array([1, 2, 3]));
+      await storage.saveMeta("b", {
+        sessionId: "b",
+        userId: "u-bob",
+        sidedrawerId: "sd",
+        recordId: "rec2",
+        fileToken: "t2",
+        offset: 200,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      await storage.saveChunk("b", 0, new Uint8Array([4, 5, 6]));
+
+      await sd.files.clearDownloadsForUser(storage, "u-alice");
+
+      expect(await storage.loadMeta("a")).toBeNull();
+      expect(await storage.loadChunks("a")).toEqual([]);
+      expect(await storage.loadMeta("b")).not.toBeNull();
+      expect(await storage.loadChunks("b")).toHaveLength(1);
+    });
+
+    it("clearDownloadsForUser throws when userId is missing", async () => {
+      const sd = new SideDrawer({ baseUrl: BASE_URL, accessToken: "t" });
+      const storage = createMemoryStorage();
+      await expect(
+        sd.files.clearDownloadsForUser(storage, "")
+      ).rejects.toThrow(/userId/i);
     });
   });
 
@@ -351,6 +514,7 @@ describe("DownloadSession", () => {
         download: () => throwError(() => boom),
       } as unknown as Files;
       const session = new DownloadSession(fakeFiles, {
+        userId: "u1",
         sidedrawerId: "sd",
         recordId: "rec",
         fileToken: "tok",
@@ -372,6 +536,7 @@ describe("DownloadSession", () => {
         .reply(200, () => generateBlob(2 * 1024));
 
       const session = sd.files.createDownloadSession({
+        userId: "u1",
         sidedrawerId: "sd1",
         recordId: "rec1",
         fileToken: "tok1",

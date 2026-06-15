@@ -47,11 +47,6 @@ describe("Files", () => {
     accessToken: "test",
   });
 
-  // The upload preflight calls `/api/v1/subscriptions/features/sidedrawer-id/{id}`
-  // before chunking. For tests that aren't about the preflight, stub the
-  // endpoint with an empty features payload so `getMaxUploadMBs` returns
-  // `null` and the preflight is a no-op. Preflight-specific tests below
-  // call `nock.cleanAll()` and register their own mock.
   beforeEach(() => {
     nock(BASE_URL)
       .persist()
@@ -660,12 +655,6 @@ describe("Files", () => {
     1000 * 5
   );
 
-  // SPD-3781: preflight size validation. The SDK no longer accepts a
-  // caller-provided limit — it fetches the SideDrawer's
-  // `sidedrawer.maxUploadMBs` from
-  // `/api/v1/subscriptions/features/sidedrawer-id/{id}` (cached in memory
-  // for 5 minutes) and fails fast if the file exceeds it. Callers can opt
-  // out of the entire preflight with `skipSizeCheck: true`.
   describe("Files.upload preflight (subscription features)", () => {
     const baseParams = {
       sidedrawerId: "preflight-sd",
@@ -675,13 +664,9 @@ describe("Files", () => {
       fileType: "document" as const,
     };
 
-    // Use a fresh SDK instance per test so the SubscriptionFeatures
-    // in-memory cache cannot leak between cases.
     let preflightSd: SideDrawer;
 
     beforeEach(() => {
-      // Drop the generic empty-features stub the outer describe sets up;
-      // these tests register their own per-case mocks.
       nock.cleanAll();
       preflightSd = new SideDrawer({
         baseUrl: BASE_URL,
@@ -718,31 +703,21 @@ describe("Files", () => {
     });
 
     it("skips the features fetch entirely when skipSizeCheck: true", (done) => {
-      // Register the features endpoint with a scope; if `skipSizeCheck`
-      // works, this scope should NOT be consumed. We assert that explicitly.
       const featuresScope = nock(BASE_URL)
         .get(
           "/api/v1/subscriptions/features/sidedrawer-id/preflight-sd"
         )
         .reply(200, { "sidedrawer.maxUploadMBs": "10" });
 
-      // Big file (would be rejected if the preflight ran).
       const file = generateBlob(50 * 1024 * 1024);
 
-      // We don't care what the upload itself does — we only need to
-      // observe whether the preflight kicked in. The upload pipeline
-      // will fail downstream (no nock for /blocks/...), which is fine.
       preflightSd.files
         .upload({ ...baseParams, file, skipSizeCheck: true })
         .subscribe({
-          next: () => {
-            // Should never reach success (no upload mocks).
-          },
+          next: () => {},
           error: (err: unknown) => {
-            // Whatever the downstream failure is, it must NOT be the
-            // preflight error.
             expect(err).not.toBeInstanceOf(FileTooLargeError);
-            expect(featuresScope.isDone()).toBe(false); // never called
+            expect(featuresScope.isDone()).toBe(false);
             done();
           },
           complete: () => {
@@ -753,31 +728,23 @@ describe("Files", () => {
     });
 
     it("fails open when the features endpoint errors", (done) => {
-      // Subscription features endpoint blows up — the SDK must log a
-      // warning and let the upload proceed. The backend remains the
-      // authoritative gate (it would reject at finalize with 409 if the
-      // file is actually too big).
       nock(BASE_URL)
         .get(
           "/api/v1/subscriptions/features/sidedrawer-id/preflight-sd"
         )
         .reply(500, { error: "boom" });
 
-      // Silence the expected warning so the test output stays clean.
       const warnSpy = jest
         .spyOn(console, "warn")
         .mockImplementation(() => undefined);
 
-      const file = generateBlob(50 * 1024 * 1024); // would be > any limit
+      const file = generateBlob(50 * 1024 * 1024);
 
       preflightSd.files
         .upload({ ...baseParams, file })
         .subscribe({
-          next: () => {
-            // ignore
-          },
+          next: () => {},
           error: (err: unknown) => {
-            // Must NOT be the preflight error: fail-open is honoured.
             expect(err).not.toBeInstanceOf(FileTooLargeError);
             expect(warnSpy).toHaveBeenCalled();
             warnSpy.mockRestore();
@@ -791,8 +758,6 @@ describe("Files", () => {
     });
 
     it("treats a missing / zero / unparseable maxUploadMBs as no limit", (done) => {
-      // Features endpoint responds but without the key (or with garbage)
-      // → SDK treats it as "no limit" and lets the upload through.
       nock(BASE_URL)
         .get(
           "/api/v1/subscriptions/features/sidedrawer-id/preflight-sd"
@@ -804,9 +769,7 @@ describe("Files", () => {
       preflightSd.files
         .upload({ ...baseParams, file })
         .subscribe({
-          next: () => {
-            // ignore
-          },
+          next: () => {},
           error: (err: unknown) => {
             expect(err).not.toBeInstanceOf(FileTooLargeError);
             done();
@@ -816,8 +779,6 @@ describe("Files", () => {
     });
 
     it("caches features per sidedrawerId across uploads (single GET for N uploads)", async () => {
-      // Mock the features endpoint exactly ONCE. If the cache works,
-      // both upload preflights will resolve from cache after the first.
       const featuresScope = nock(BASE_URL)
         .get(
           "/api/v1/subscriptions/features/sidedrawer-id/preflight-sd"
@@ -825,8 +786,6 @@ describe("Files", () => {
         .once()
         .reply(200, { "sidedrawer.maxUploadMBs": "10" });
 
-      // Both files exceed the limit → both must fail with FileTooLargeError,
-      // but only the FIRST one should hit the features endpoint.
       const file = generateBlob(11 * 1024 * 1024);
 
       const expectTooLarge = (sd: SideDrawer) =>
@@ -844,8 +803,6 @@ describe("Files", () => {
       await expectTooLarge(preflightSd);
 
       expect(featuresScope.isDone()).toBe(true);
-      // Pending mocks list would be non-empty if the SDK had hit the
-      // endpoint twice and tried to re-consume a non-existent stub.
       expect(nock.pendingMocks()).toEqual([]);
     });
   });

@@ -18,7 +18,8 @@ export interface IndexedDBDownloadStorageOptions {
 const DEFAULT_DB_NAME = "sidedrawer-sdk-downloads";
 const DEFAULT_META_STORE = "meta";
 const DEFAULT_CHUNKS_STORE = "chunks";
-const DB_VERSION = 1;
+const USER_ID_INDEX = "userId";
+const DB_VERSION = 2;
 
 /**
  * Build an IndexedDB-backed implementation of
@@ -60,8 +61,19 @@ export function createIndexedDBDownloadStorage(
       const req = indexedDB.open(dbName, DB_VERSION);
       req.onupgradeneeded = () => {
         const db = req.result;
+        const tx = req.transaction;
+        let metaStoreObj: IDBObjectStore;
         if (!db.objectStoreNames.contains(metaStore)) {
-          db.createObjectStore(metaStore, { keyPath: "sessionId" });
+          metaStoreObj = db.createObjectStore(metaStore, {
+            keyPath: "sessionId",
+          });
+        } else {
+          metaStoreObj = tx!.objectStore(metaStore);
+        }
+        if (!metaStoreObj.indexNames.contains(USER_ID_INDEX)) {
+          metaStoreObj.createIndex(USER_ID_INDEX, "userId", {
+            unique: false,
+          });
         }
         if (!db.objectStoreNames.contains(chunksStore)) {
           // Compound key [sessionId, offset] lets us scan chunks for a
@@ -279,11 +291,75 @@ export function createIndexedDBDownloadStorage(
       });
     },
 
-    async listSessions() {
+    async listSessions(userId?: string) {
       return runTx(metaStore, "readonly", (tx) => {
         const store = tx.objectStore(metaStore);
-        return wrapRequest<DownloadSessionMeta[]>(store.getAll());
+        if (userId == null) {
+          return wrapRequest<DownloadSessionMeta[]>(store.getAll()).then(
+            (rows) => rows.filter((row) => row.userId != null)
+          );
+        }
+        const index = store.index(USER_ID_INDEX);
+        return wrapRequest<DownloadSessionMeta[]>(
+          index.getAll(IDBKeyRange.only(userId))
+        );
       });
+    },
+
+    async clearAllForUser(userId) {
+      if (!userId) {
+        throw new Error(
+          "IndexedDBDownloadStorage.clearAllForUser: `userId` is required."
+        );
+      }
+      await runTx(
+        [metaStore, chunksStore],
+        "readwrite",
+        async (tx) => {
+          const metaStoreObj = tx.objectStore(metaStore);
+          const chunksStoreObj = tx.objectStore(chunksStore);
+          const index = metaStoreObj.index(USER_ID_INDEX);
+
+          const sessionIds = await new Promise<string[]>(
+            (resolve, reject) => {
+              const ids: string[] = [];
+              const req = index.openCursor(IDBKeyRange.only(userId));
+              req.onsuccess = () => {
+                const cursor = req.result;
+                if (cursor) {
+                  const meta = cursor.value as DownloadSessionMeta;
+                  ids.push(meta.sessionId);
+                  cursor.continue();
+                } else {
+                  resolve(ids);
+                }
+              };
+              req.onerror = () => reject(req.error);
+            }
+          );
+
+          for (const id of sessionIds) {
+            await wrapRequest(metaStoreObj.delete(id));
+            const chunkRange = IDBKeyRange.bound(
+              [id, 0],
+              [id, Number.MAX_SAFE_INTEGER]
+            );
+            await new Promise<void>((resolve, reject) => {
+              const req = chunksStoreObj.openCursor(chunkRange);
+              req.onsuccess = () => {
+                const cursor = req.result;
+                if (cursor) {
+                  cursor.delete();
+                  cursor.continue();
+                } else {
+                  resolve();
+                }
+              };
+              req.onerror = () => reject(req.error);
+            });
+          }
+        }
+      );
     },
   };
 }

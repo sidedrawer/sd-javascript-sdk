@@ -35,15 +35,6 @@ import {
 } from "./DownloadSession";
 import { SubscriptionFeaturesService } from "./SubscriptionFeatures";
 
-/**
- * Error code used when the SDK rejects a file before uploading it because
- * its size exceeds the SideDrawer's `sidedrawer.maxUploadMBs` subscription
- * feature (fetched by the SDK from
- * `/api/v1/subscriptions/features/sidedrawer-id/{sidedrawerId}`).
- *
- * Callers that want to bypass this preflight (e.g. for trusted internal
- * tools) can pass `skipSizeCheck: true` to `Files.upload`.
- */
 export const ERR_FILE_TOO_LARGE = "ERR_FILE_TOO_LARGE";
 
 /**
@@ -53,16 +44,6 @@ export const ERR_FILE_TOO_LARGE = "ERR_FILE_TOO_LARGE";
  */
 export const ERR_PAYLOAD_TOO_LARGE = "ERR_PAYLOAD_TOO_LARGE";
 
-/**
- * Thrown by `Files.upload` when the input file is larger than the
- * SideDrawer's `sidedrawer.maxUploadMBs` subscription limit. Carries the
- * actual sizes so the consumer can surface a useful message
- * ("file is 192 MB, limit is 10 MB").
- *
- * For backend-side rejections (status 409 + `payload_too_large` message) the SDK
- * throws an `HttpServiceError` with `code === ERR_PAYLOAD_TOO_LARGE` instead, so
- * the response body is preserved.
- */
 export class FileTooLargeError extends Error {
   public readonly code = ERR_FILE_TOO_LARGE;
 
@@ -104,20 +85,6 @@ export interface FileUploadOptions extends Abortable {
   maxConcurrency: number;
   progressSubscriber$?: Subject<number>;
   maxChunkSizeBytes: number;
-  /**
-   * When `true`, the SDK skips the preflight upload size check entirely:
-   * it does NOT call `/api/v1/subscriptions/features/sidedrawer-id/{id}`
-   * and does NOT throw `FileTooLargeError` before chunking. Use only for
-   * trusted callers where the backend's `payload_too_large` rejection at
-   * finalize is acceptable as the sole safety net.
-   *
-   * Defaults to `false`: the SDK fetches the SideDrawer's
-   * `sidedrawer.maxUploadMBs` subscription feature (cached in memory for
-   * 5 minutes) and rejects the upload synchronously if the file exceeds it.
-   * If the features call itself fails (network, 404, etc.) the SDK fails
-   * open: it logs a warning and lets the upload proceed, so the backend
-   * remains the source of truth.
-   */
   skipSizeCheck?: boolean;
 }
 
@@ -502,22 +469,6 @@ export default class Files {
       subscriptionFeatures ?? new SubscriptionFeaturesService(context);
   }
 
-  /**
-   * Upload file to a record.
-   *
-   * Preflight behaviour (controlled by `skipSizeCheck`, default `false`):
-   *
-   * - `skipSizeCheck: false` — the SDK fetches the SideDrawer's
-   *   `sidedrawer.maxUploadMBs` from
-   *   `/api/v1/subscriptions/features/sidedrawer-id/{id}` (cached in memory
-   *   for 5 minutes) and throws {@link FileTooLargeError} synchronously if
-   *   `file.size` exceeds it. If the features call itself fails the SDK
-   *   fails open: it logs a warning and proceeds with the upload, letting
-   *   the backend's finalize step act as the authoritative gate
-   *   ({@link ERR_PAYLOAD_TOO_LARGE}).
-   * - `skipSizeCheck: true` — the SDK does NOT call the features endpoint
-   *   and does NOT validate the size client-side. Use for trusted callers.
-   */
   public upload(
     params: FileUploadParams & Partial<FileUploadOptions>
   ): ObservablePromise<RecordFileDetail> {
@@ -579,14 +530,6 @@ export default class Files {
     ) as ObservablePromise<RecordFileDetail>;
   }
 
-  /**
-   * Resolves once the preflight upload-size check has completed (or been
-   * skipped). Throws {@link FileTooLargeError} when the file exceeds the
-   * SideDrawer's `sidedrawer.maxUploadMBs`. Network failures while fetching
-   * the subscription features are swallowed (logged as a warning) so the
-   * upload still proceeds — the backend remains the authoritative gate via
-   * `payload_too_large` at finalize.
-   */
   private async preflightSizeCheck(
     sidedrawerId: string,
     file: File | Blob,
@@ -769,14 +712,23 @@ export default class Files {
    */
   public async restoreDownloadSession(
     sessionId: string,
-    options: { storage: DownloadSessionStorage }
+    options: { storage: DownloadSessionStorage; userId: string }
   ): Promise<DownloadSession | null> {
+    if (!options?.userId) {
+      throw new Error(
+        "Files.restoreDownloadSession: `userId` is required."
+      );
+    }
     const meta = await options.storage.loadMeta(sessionId);
     if (meta == null) {
       return null;
     }
+    if (meta.userId !== options.userId) {
+      return null;
+    }
 
     return new DownloadSession(this, {
+      userId: meta.userId,
       sidedrawerId: meta.sidedrawerId,
       recordId: meta.recordId,
       fileToken: meta.fileToken,
@@ -788,14 +740,39 @@ export default class Files {
   }
 
   /**
-   * List every download session currently persisted in the given storage.
-   * Use on app startup to discover unfinished downloads. Each returned
-   * meta carries the original parameters plus the last persisted offset.
+   * List every download session currently persisted in the given storage
+   * for the given user. Use on app startup to discover unfinished
+   * downloads for the currently authenticated user. Sessions belonging
+   * to other users (or to legacy schemas without a `userId`) are NOT
+   * returned.
    */
   public async listPendingDownloads(
-    storage: DownloadSessionStorage
+    storage: DownloadSessionStorage,
+    options: { userId: string }
   ): Promise<DownloadSessionMeta[]> {
-    return storage.listSessions();
+    if (!options?.userId) {
+      throw new Error(
+        "Files.listPendingDownloads: `userId` is required."
+      );
+    }
+    return storage.listSessions(options.userId);
+  }
+
+  /**
+   * Delete every persisted download session belonging to the given user.
+   * Intended for logout / account-switch flows on shared devices so the
+   * next user does not inherit chunks they don't own.
+   */
+  public async clearDownloadsForUser(
+    storage: DownloadSessionStorage,
+    userId: string
+  ): Promise<void> {
+    if (!userId) {
+      throw new Error(
+        "Files.clearDownloadsForUser: `userId` is required."
+      );
+    }
+    await storage.clearAllForUser(userId);
   }
 }
 

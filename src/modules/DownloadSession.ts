@@ -52,6 +52,11 @@ export interface DownloadSessionProgress {
 export interface DownloadSessionMeta {
   /** Stable id used as the storage key. */
   sessionId: string;
+  /**
+   * Identifier of the user that owns this download. Required to prevent
+   * cross-user leakage of persisted chunks on shared browsers / devices.
+   */
+  userId: string;
   sidedrawerId: string;
   recordId: string;
   fileToken?: string;
@@ -87,20 +92,34 @@ export interface DownloadSessionStorage {
   saveChunk(id: string, offset: number, chunk: Uint8Array): Promise<void>;
   loadChunks(id: string): Promise<{ offset: number; data: Uint8Array }[]>;
   clear(id: string): Promise<void>;
-  listSessions(): Promise<DownloadSessionMeta[]>;
+  /**
+   * Return persisted sessions. When `userId` is provided, only sessions
+   * belonging to that user must be returned. Implementations should also
+   * exclude legacy entries that pre-date the `userId` field.
+   */
+  listSessions(userId?: string): Promise<DownloadSessionMeta[]>;
+  /** Delete every session (meta + chunks) belonging to `userId`. */
+  clearAllForUser(userId: string): Promise<void>;
 }
 
 export interface DownloadSessionParams
   extends FileDownloadParams,
     Partial<Pick<FileDownloadOptions, "responseType">> {
   /**
+   * Identifier of the user currently authenticated on this client.
+   * Required: the SDK uses it to scope persisted chunks so a different
+   * user logging in on the same browser cannot see or resume them.
+   */
+  userId: string;
+  /**
    * Optional stable identifier for the session. Used as the storage key
    * when a {@link DownloadSessionStorage} is provided, so the session can
    * be located and resumed across page reloads.
    *
    * When omitted, the SDK derives one deterministically from the
-   * `sidedrawerId` + `recordId` + `fileToken` / `fileNameWithExtension`
-   * triple so two starts of the same download share progress.
+   * `userId` + `sidedrawerId` + `recordId` + `fileToken` /
+   * `fileNameWithExtension` tuple so two starts of the same download
+   * share progress.
    */
   sessionId?: string;
   /**
@@ -164,6 +183,11 @@ export class DownloadSession {
   private pendingChunkWrites: Promise<void>[] = [];
 
   constructor(files: Files, params: DownloadSessionParams) {
+    if (!params.userId) {
+      throw new Error(
+        "DownloadSession: `userId` is required. Pass the id of the currently authenticated user to prevent cross-user leakage of persisted chunks."
+      );
+    }
     this.files = files;
     this.params = params;
     this.storage = params.storage;
@@ -481,6 +505,7 @@ export class DownloadSession {
     const now = Date.now();
     return {
       sessionId: this.id,
+      userId: this.params.userId,
       sidedrawerId: this.params.sidedrawerId,
       recordId: this.params.recordId,
       fileToken: this.params.fileToken,
@@ -494,9 +519,11 @@ export class DownloadSession {
   }
 }
 
-function deriveSessionId(params: FileDownloadParams): string {
+function deriveSessionId(
+  params: { userId: string } & FileDownloadParams
+): string {
   const ref = params.fileToken ?? params.fileNameWithExtension ?? "no-ref";
-  return `sd:${params.sidedrawerId}:rec:${params.recordId}:ref:${ref}`;
+  return `user:${params.userId}:sd:${params.sidedrawerId}:rec:${params.recordId}:ref:${ref}`;
 }
 
 function assembleBlob(

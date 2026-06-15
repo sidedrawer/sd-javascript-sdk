@@ -84,8 +84,6 @@ describe("SubscriptionFeaturesService", () => {
   });
 
   it("re-fetches after the TTL expires", async () => {
-    // First mock returns 100, second returns 200; we simulate time passing
-    // by feeding a fake `now` clock that jumps past the TTL between calls.
     nock(BASE_URL)
       .get("/api/v1/subscriptions/features/sidedrawer-id/sd-ttl")
       .reply(200, { "sidedrawer.maxUploadMBs": "100" });
@@ -101,7 +99,6 @@ describe("SubscriptionFeaturesService", () => {
 
     expect(await service.getMaxUploadMBs("sd-ttl")).toBe(100);
 
-    // Jump past the TTL.
     fakeNow += SUBSCRIPTION_FEATURES_CACHE_TTL_MS + 1;
 
     expect(await service.getMaxUploadMBs("sd-ttl")).toBe(200);

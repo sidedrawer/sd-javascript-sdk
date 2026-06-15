@@ -10,8 +10,12 @@ function uniqueDb(): string {
   return `sd-test-${Math.random().toString(36).slice(2)}`;
 }
 
-const baseMeta = (sessionId: string): DownloadSessionMeta => ({
+const baseMeta = (
+  sessionId: string,
+  userId: string = "u1"
+): DownloadSessionMeta => ({
   sessionId,
+  userId,
   sidedrawerId: "sd",
   recordId: "rec",
   fileToken: "tok",
@@ -72,7 +76,7 @@ describe("IndexedDBDownloadStorage", () => {
     expect(await storage.loadChunks("a")).toEqual([]);
   });
 
-  it("listSessions returns all persisted metas", async () => {
+  it("listSessions returns all persisted metas when called without userId", async () => {
     const storage = createIndexedDBDownloadStorage({ dbName: uniqueDb() });
     await storage.saveMeta("a", baseMeta("a"));
     await storage.saveMeta("b", { ...baseMeta("b"), offset: 999 });
@@ -81,6 +85,56 @@ describe("IndexedDBDownloadStorage", () => {
     const byId = new Map(all.map((m) => [m.sessionId, m]));
     expect(byId.get("a")?.offset).toBe(0);
     expect(byId.get("b")?.offset).toBe(999);
+  });
+
+  it("listSessions(userId) returns only sessions for that user", async () => {
+    const storage = createIndexedDBDownloadStorage({ dbName: uniqueDb() });
+    await storage.saveMeta("a", baseMeta("a", "u-alice"));
+    await storage.saveMeta("b", baseMeta("b", "u-alice"));
+    await storage.saveMeta("c", baseMeta("c", "u-bob"));
+
+    const alice = await storage.listSessions("u-alice");
+    expect(alice.map((m) => m.sessionId).sort()).toEqual(["a", "b"]);
+
+    const bob = await storage.listSessions("u-bob");
+    expect(bob.map((m) => m.sessionId)).toEqual(["c"]);
+
+    const mallory = await storage.listSessions("u-mallory");
+    expect(mallory).toEqual([]);
+  });
+
+  it("clearAllForUser removes meta + chunks only for the given user", async () => {
+    const storage = createIndexedDBDownloadStorage({ dbName: uniqueDb() });
+    await storage.saveMeta("a", baseMeta("a", "u-alice"));
+    await storage.saveChunk("a", 0, new Uint8Array([1, 2, 3]));
+    await storage.saveChunk("a", 100, new Uint8Array([4, 5, 6]));
+    await storage.saveMeta("b", baseMeta("b", "u-alice"));
+    await storage.saveChunk("b", 0, new Uint8Array([7, 8]));
+    await storage.saveMeta("c", baseMeta("c", "u-bob"));
+    await storage.saveChunk("c", 0, new Uint8Array([9]));
+
+    await storage.clearAllForUser("u-alice");
+
+    expect(await storage.loadMeta("a")).toBeNull();
+    expect(await storage.loadChunks("a")).toEqual([]);
+    expect(await storage.loadMeta("b")).toBeNull();
+    expect(await storage.loadChunks("b")).toEqual([]);
+    expect(await storage.loadMeta("c")).not.toBeNull();
+    expect(await storage.loadChunks("c")).toHaveLength(1);
+  });
+
+  it("clearAllForUser is a no-op when no sessions match", async () => {
+    const storage = createIndexedDBDownloadStorage({ dbName: uniqueDb() });
+    await storage.saveMeta("a", baseMeta("a", "u-alice"));
+    await expect(
+      storage.clearAllForUser("u-mallory")
+    ).resolves.toBeUndefined();
+    expect(await storage.loadMeta("a")).not.toBeNull();
+  });
+
+  it("clearAllForUser throws when userId is empty", async () => {
+    const storage = createIndexedDBDownloadStorage({ dbName: uniqueDb() });
+    await expect(storage.clearAllForUser("")).rejects.toThrow(/userId/i);
   });
 
   it("saveMeta with the same id overwrites", async () => {
