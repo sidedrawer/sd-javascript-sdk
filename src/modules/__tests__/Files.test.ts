@@ -1009,4 +1009,225 @@ describe("Files", () => {
         },
       });
   }, 5000);
+
+  describe("Files.download with sink", () => {
+    const downloadPath =
+      "/api/v2/record-files/sidedrawer/sidedrawer-id/sd-sink/records/record-id/rec-sink/record-files/tok-sink";
+
+    function makeRecordingSink() {
+      const writes: Uint8Array[] = [];
+      let closed = false;
+      let aborted = false;
+      let abortReason: unknown = undefined;
+      return {
+        sink: {
+          write(chunk: Uint8Array) {
+            writes.push(chunk);
+          },
+          async close() {
+            closed = true;
+          },
+          async abort(reason?: unknown) {
+            aborted = true;
+            abortReason = reason;
+          },
+        },
+        snapshot: () => ({ writes, closed, aborted, abortReason }),
+      };
+    }
+
+    it(
+      "pipes every network chunk through sink.write and calls sink.close() on completion",
+      (done) => {
+        const payload = Buffer.from("hello sink world");
+        nock(BASE_URL)
+          .get(downloadPath)
+          .reply(200, payload, {
+            "Content-Type": "application/octet-stream",
+            "Content-Length": String(payload.byteLength),
+          });
+
+        const { sink, snapshot } = makeRecordingSink();
+
+        sd.files
+          .download({
+            sidedrawerId: "sd-sink",
+            recordId: "rec-sink",
+            fileToken: "tok-sink",
+            responseType: "arraybuffer",
+            sink,
+          })
+          .subscribe({
+            next: (result) => {
+              // With sink, discardBuffer is forced on → result is null.
+              expect(result).toBeNull();
+            },
+            error: (err) => done(err),
+            complete: () => {
+              const snap = snapshot();
+              expect(snap.closed).toBe(true);
+              expect(snap.aborted).toBe(false);
+              const total = snap.writes.reduce(
+                (acc, c) => acc + c.byteLength,
+                0
+              );
+              expect(total).toBe(payload.byteLength);
+              done();
+            },
+          });
+      },
+      5000
+    );
+
+    it(
+      "calls sink.abort(error) when the download fails",
+      (done) => {
+        nock(BASE_URL)
+          .get(downloadPath)
+          .reply(500, "boom");
+
+        const { sink, snapshot } = makeRecordingSink();
+
+        sd.files
+          .download({
+            sidedrawerId: "sd-sink",
+            recordId: "rec-sink",
+            fileToken: "tok-sink",
+            responseType: "arraybuffer",
+            sink,
+          })
+          .subscribe({
+            next: () => done(new Error("should not emit on a 500")),
+            error: (err) => {
+              const snap = snapshot();
+              expect(snap.aborted).toBe(true);
+              expect(snap.closed).toBe(false);
+              expect(snap.abortReason).toBeDefined();
+              expect(err).toBeDefined();
+              done();
+            },
+          });
+      },
+      5000
+    );
+
+    it(
+      "still invokes the user-provided onChunk in addition to sink.write",
+      (done) => {
+        const payload = Buffer.from("compose me");
+        nock(BASE_URL)
+          .get(downloadPath)
+          .reply(200, payload, {
+            "Content-Type": "application/octet-stream",
+            "Content-Length": String(payload.byteLength),
+          });
+
+        const { sink, snapshot } = makeRecordingSink();
+        let onChunkBytes = 0;
+
+        sd.files
+          .download({
+            sidedrawerId: "sd-sink",
+            recordId: "rec-sink",
+            fileToken: "tok-sink",
+            responseType: "arraybuffer",
+            sink,
+            onChunk: (chunk) => {
+              onChunkBytes += chunk.byteLength;
+            },
+          })
+          .subscribe({
+            error: (err) => done(err),
+            complete: () => {
+              expect(onChunkBytes).toBe(payload.byteLength);
+              const sinkBytes = snapshot().writes.reduce(
+                (acc, c) => acc + c.byteLength,
+                0
+              );
+              expect(sinkBytes).toBe(payload.byteLength);
+              done();
+            },
+          });
+      },
+      5000
+    );
+  });
+
+  describe("Files.downloadByUrl", () => {
+    it("rejects when url is missing or not a string", () => {
+      expect(() =>
+        sd.files.downloadByUrl(undefined as unknown as string)
+      ).toThrow();
+      expect(() => sd.files.downloadByUrl("")).toThrow();
+    });
+
+    it(
+      "performs a GET against the provided URL and resolves with the response",
+      (done) => {
+        const payload = Buffer.from("zip bytes here");
+        nock(BASE_URL)
+          .get("/api/v2/exports/zip/xyz")
+          .reply(200, payload, {
+            "Content-Type": "application/zip",
+            "Content-Length": String(payload.byteLength),
+          });
+
+        sd.files
+          .downloadByUrl("/api/v2/exports/zip/xyz", {
+            responseType: "arraybuffer",
+          })
+          .subscribe({
+            next: (result) => {
+              expect(result).toBeDefined();
+              if (result instanceof Buffer) {
+                expect(result.byteLength).toBe(payload.byteLength);
+              }
+            },
+            error: (err) => done(err),
+            complete: () => done(),
+          });
+      },
+      5000
+    );
+
+    it(
+      "supports a sink: pipes chunks and closes on completion",
+      (done) => {
+        const payload = Buffer.from("zip-streamed-bytes");
+        nock(BASE_URL)
+          .get("/api/v2/exports/zip/xyz")
+          .reply(200, payload, {
+            "Content-Type": "application/zip",
+            "Content-Length": String(payload.byteLength),
+          });
+
+        const writes: Uint8Array[] = [];
+        let closed = false;
+
+        sd.files
+          .downloadByUrl("/api/v2/exports/zip/xyz", {
+            responseType: "arraybuffer",
+            sink: {
+              write: (c) => {
+                writes.push(c);
+              },
+              close: async () => {
+                closed = true;
+              },
+              abort: async () => undefined,
+            },
+          })
+          .subscribe({
+            error: (err) => done(err),
+            complete: () => {
+              const total = writes.reduce((acc, c) => acc + c.byteLength, 0);
+              expect(total).toBe(payload.byteLength);
+              expect(closed).toBe(true);
+              done();
+            },
+          });
+      },
+      5000
+    );
+  });
 });

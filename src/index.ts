@@ -37,4 +37,5 @@ export * from "./types/core";
 export * from "./types/files";
 export * from "./types/records";
 export * from "./storage/IndexedDBDownloadStorage";
+export * from "./modules/sinks";
 export { SideDrawer };

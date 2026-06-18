@@ -32,6 +32,7 @@ import {
   type DownloadSessionParams,
   type DownloadSessionStorage,
 } from "./DownloadSession";
+import type { DownloadSink } from "./sinks/types";
 
 export const ERR_FILE_TOO_LARGE = "ERR_FILE_TOO_LARGE";
 
@@ -162,6 +163,17 @@ export interface FileDownloadOptions extends Abortable {
    * Requires `onChunk`; otherwise the bytes are silently dropped.
    */
   discardBuffer?: boolean;
+  /**
+   * Optional sink that receives each network chunk directly. When set,
+   * the SDK auto-enables streaming (`discardBuffer: true`), pipes every
+   * chunk through `sink.write`, calls `sink.close()` on successful
+   * completion, and `sink.abort(error)` on failure / cancellation.
+   *
+   * Mutually compatible with `onChunk` (both fire). Pair with
+   * `createFileSystemWriterSink` for stream-to-disk downloads with
+   * memory usage flat at the chunk size, regardless of total file size.
+   */
+  sink?: DownloadSink;
 }
 
 class UploadProcess {
@@ -452,6 +464,17 @@ const DEFAULT_FILE_UPLOAD_OPTIONS = {
   skipSizeCheck: false,
 } satisfies FileUploadOptions;
 
+function composeOnChunk(
+  a: ((chunk: Uint8Array, offsetFromStart: number) => void) | undefined,
+  b: (chunk: Uint8Array, offsetFromStart: number) => void
+): (chunk: Uint8Array, offsetFromStart: number) => void {
+  if (a == null) return b;
+  return (chunk, offset) => {
+    a(chunk, offset);
+    b(chunk, offset);
+  };
+}
+
 function preflightSizeCheck(
   file: File | Blob,
   skipSizeCheck: boolean,
@@ -556,27 +579,6 @@ export default class Files {
       ...options
     } = params;
 
-    const {
-      responseType = isBrowserEnvironment() ? "blob" : "arraybuffer",
-      progressSubscriber$,
-      resumeFrom,
-      onChunk,
-      discardBuffer,
-      signal,
-    } = options;
-
-    if (discardBuffer && onChunk == null) {
-      throw new Error(
-        "files.download: `discardBuffer: true` requires `onChunk` — without it the streamed bytes are silently dropped."
-      );
-    }
-
-    if (resumeFrom != null && (!Number.isFinite(resumeFrom) || resumeFrom < 0)) {
-      throw new Error(
-        `files.download: invalid resumeFrom (${resumeFrom}). Must be a non-negative finite number.`
-      );
-    }
-
     let downloadUrl;
 
     if (fileToken) {
@@ -587,11 +589,76 @@ export default class Files {
       return isRequired("fileNameWithExtension or fileToken");
     }
 
-    // Build a composite progress handler that forwards to BOTH the raw
-    // user callback (`options.onDownloadProgress`) and the legacy
-    // percentage-based `progressSubscriber$`. The raw callback runs in
-    // any environment; the percentage path is gated to browsers because
-    // that's where the original implementation was scoped.
+    return this.executeDownload(downloadUrl, options);
+  }
+
+  /**
+   * Download an arbitrary URL using the SDK's HTTP client (so auth
+   * headers, streaming, progress, abort, and sink lifecycle all work the
+   * same as in {@link download}). Use for resources that don't fit the
+   * `(sidedrawerId, recordId, fileToken)` shape — typically generated
+   * ZIPs, exports, or pre-signed URLs returned by the backend.
+   *
+   * The URL can be relative to the configured `baseUrl` or an absolute
+   * `http(s)` URL.
+   *
+   * @example
+   * ```ts
+   * const sink = await createFileSystemWriterSink({ suggestedName: "all-files.zip" });
+   * await sd.files.downloadByUrl(zipUrl, { sink });
+   * ```
+   */
+  public downloadByUrl(
+    url: string,
+    options?: Partial<FileDownloadOptions>
+  ): ObservablePromise<DownloadResponse> {
+    if (typeof url !== "string" || url.length === 0) {
+      return isRequired("url");
+    }
+    return this.executeDownload(url, options ?? {});
+  }
+
+  /**
+   * Shared download pipeline used by {@link download} and
+   * {@link downloadByUrl}. Wires resume/Range, progress, chunk
+   * forwarding, and (when a `sink` is set) the sink lifecycle —
+   * `discardBuffer` is forced on, every chunk is piped through
+   * `sink.write`, and `sink.close()` / `sink.abort()` are invoked on
+   * completion or failure.
+   */
+  private executeDownload(
+    url: string,
+    options: Partial<FileDownloadOptions>
+  ): ObservablePromise<DownloadResponse> {
+    const {
+      responseType = isBrowserEnvironment() ? "blob" : "arraybuffer",
+      progressSubscriber$,
+      resumeFrom,
+      onChunk,
+      discardBuffer,
+      signal,
+      sink,
+    } = options;
+
+    const effectiveDiscardBuffer = sink != null ? true : discardBuffer;
+    const effectiveOnChunk = sink != null
+      ? composeOnChunk(onChunk, (chunk: Uint8Array) => {
+          void sink.write(chunk);
+        })
+      : onChunk;
+
+    if (effectiveDiscardBuffer && effectiveOnChunk == null) {
+      throw new Error(
+        "files.download: `discardBuffer: true` requires `onChunk` (or a `sink`) — without it the streamed bytes are silently dropped."
+      );
+    }
+
+    if (resumeFrom != null && (!Number.isFinite(resumeFrom) || resumeFrom < 0)) {
+      throw new Error(
+        `files.download: invalid resumeFrom (${resumeFrom}). Must be a non-negative finite number.`
+      );
+    }
+
     const userOnDownloadProgress = options.onDownloadProgress;
     let onDownloadProgress:
       | ((progressEvent: SdkProgressEvent) => void)
@@ -622,22 +689,51 @@ export default class Files {
 
     let receivedInThisCall = 0;
     const wrappedOnChunk: ((chunk: Uint8Array) => void) | undefined =
-      onChunk != null
+      effectiveOnChunk != null
         ? (chunk: Uint8Array) => {
             const offsetFromStart = startOffset + receivedInThisCall;
             receivedInThisCall += chunk.byteLength;
-            onChunk(chunk, offsetFromStart);
+            effectiveOnChunk(chunk, offsetFromStart);
           }
         : undefined;
 
-    return this.context.http.get<DownloadResponse>(downloadUrl, {
+    const httpObservable = this.context.http.get<DownloadResponse>(url, {
       responseType,
       onDownloadProgress,
       onChunk: wrappedOnChunk,
-      discardBuffer,
+      discardBuffer: effectiveDiscardBuffer,
       signal,
       headers: Object.keys(headers).length > 0 ? headers : undefined,
     });
+
+    if (sink == null) {
+      return httpObservable;
+    }
+
+    return new Observable<DownloadResponse>((subscriber) => {
+      const sub = httpObservable.subscribe({
+        next: (value) => subscriber.next(value),
+        error: async (err) => {
+          try {
+            await sink.abort(err);
+          } catch {
+            /* swallow secondary abort failures so the original error wins */
+          }
+          subscriber.error(err);
+        },
+        complete: () => {
+          (async () => {
+            try {
+              await sink.close();
+              subscriber.complete();
+            } catch (closeErr) {
+              subscriber.error(closeErr);
+            }
+          })();
+        },
+      });
+      return () => sub.unsubscribe();
+    }) as ObservablePromise<DownloadResponse>;
   }
 
   /**
