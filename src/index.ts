@@ -32,7 +32,6 @@ globalThis.SideDrawer = SideDrawer;
 export * from "./core/Context";
 export * from "./modules/Files";
 export * from "./modules/Records";
-export * from "./modules/SubscriptionFeatures";
 export * from "./types/base";
 export * from "./types/core";
 export * from "./types/files";

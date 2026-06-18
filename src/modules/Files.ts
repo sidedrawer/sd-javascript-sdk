@@ -1,7 +1,6 @@
 import {
   catchError,
   defer,
-  from,
   mergeMap,
   Observable,
   of,
@@ -33,7 +32,6 @@ import {
   type DownloadSessionParams,
   type DownloadSessionStorage,
 } from "./DownloadSession";
-import { SubscriptionFeaturesService } from "./SubscriptionFeatures";
 
 export const ERR_FILE_TOO_LARGE = "ERR_FILE_TOO_LARGE";
 
@@ -86,6 +84,7 @@ export interface FileUploadOptions extends Abortable {
   progressSubscriber$?: Subject<number>;
   maxChunkSizeBytes: number;
   skipSizeCheck?: boolean;
+  maxUploadMBs?: number;
 }
 
 export interface FileUploadParams extends RecordFileQueryParams {
@@ -453,20 +452,29 @@ const DEFAULT_FILE_UPLOAD_OPTIONS = {
   skipSizeCheck: false,
 } satisfies FileUploadOptions;
 
+function preflightSizeCheck(
+  file: File | Blob,
+  skipSizeCheck: boolean,
+  maxUploadMBs?: number
+): void {
+  if (skipSizeCheck) return;
+  if (maxUploadMBs == null) return;
+  if (!Number.isFinite(maxUploadMBs) || maxUploadMBs <= 0) return;
+
+  const maxBytes = maxUploadMBs * 1024 * 1024;
+  if (file.size > maxBytes) {
+    throw new FileTooLargeError(file.size, maxBytes);
+  }
+}
+
 /**
  * Files Module
  */
 export default class Files {
   private context: Context;
-  private subscriptionFeatures: SubscriptionFeaturesService;
 
-  constructor(
-    context: Context,
-    subscriptionFeatures?: SubscriptionFeaturesService
-  ) {
+  constructor(context: Context) {
     this.context = context;
-    this.subscriptionFeatures =
-      subscriptionFeatures ?? new SubscriptionFeaturesService(context);
   }
 
   public upload(
@@ -493,18 +501,24 @@ export default class Files {
       ...options,
     } satisfies FileUploadOptions;
 
-    const uploadProcess = new UploadProcess(
-      {
-        httpService: this.context.http,
-        sidedrawerId,
-        recordId,
+    return defer(() => {
+      preflightSizeCheck(
         file,
-      },
-      optionsWithDefaults
-    );
+        optionsWithDefaults.skipSizeCheck ?? false,
+        optionsWithDefaults.maxUploadMBs
+      );
 
-    const runUpload = () =>
-      uploadProcess.upload({
+      const uploadProcess = new UploadProcess(
+        {
+          httpService: this.context.http,
+          sidedrawerId,
+          recordId,
+          file,
+        },
+        optionsWithDefaults
+      );
+
+      return uploadProcess.upload({
         record: {
           fileName,
           uploadTitle,
@@ -518,42 +532,7 @@ export default class Files {
         externalKeys,
         options: optionsWithDefaults,
       });
-
-    return defer(() =>
-      from(
-        this.preflightSizeCheck(
-          sidedrawerId,
-          file,
-          optionsWithDefaults.skipSizeCheck ?? false
-        )
-      ).pipe(switchMap(() => runUpload()))
-    ) as ObservablePromise<RecordFileDetail>;
-  }
-
-  private async preflightSizeCheck(
-    sidedrawerId: string,
-    file: File | Blob,
-    skipSizeCheck: boolean
-  ): Promise<void> {
-    if (skipSizeCheck) return;
-
-    let maxMBs: number | null = null;
-    try {
-      maxMBs = await this.subscriptionFeatures.getMaxUploadMBs(sidedrawerId);
-    } catch (err) {
-      console.warn(
-        "[SideDrawer SDK] Could not fetch subscription features for upload size check; allowing upload. Backend will still enforce the limit at finalize.",
-        err
-      );
-      return;
-    }
-
-    if (maxMBs == null) return;
-
-    const maxBytes = maxMBs * 1024 * 1024;
-    if (file.size > maxBytes) {
-      throw new FileTooLargeError(file.size, maxBytes);
-    }
+    }) as ObservablePromise<RecordFileDetail>;
   }
 
   /**

@@ -47,12 +47,6 @@ describe("Files", () => {
     accessToken: "test",
   });
 
-  beforeEach(() => {
-    nock(BASE_URL)
-      .persist()
-      .get(/\/api\/v1\/subscriptions\/features\/sidedrawer-id\//)
-      .reply(200, {});
-  });
 
   it(
     "Files.upload",
@@ -655,7 +649,7 @@ describe("Files", () => {
     1000 * 5
   );
 
-  describe("Files.upload preflight (subscription features)", () => {
+  describe("Files.upload preflight (consumer-supplied maxUploadMBs)", () => {
     const baseParams = {
       sidedrawerId: "preflight-sd",
       recordId: "preflight-rec",
@@ -674,17 +668,11 @@ describe("Files", () => {
       });
     });
 
-    it("throws FileTooLargeError when the file exceeds the subscription limit", (done) => {
-      nock(BASE_URL)
-        .get(
-          "/api/v1/subscriptions/features/sidedrawer-id/preflight-sd"
-        )
-        .reply(200, { "sidedrawer.maxUploadMBs": "10" });
-
+    it("throws FileTooLargeError when the file exceeds the consumer-supplied limit", (done) => {
       const file = generateBlob(11 * 1024 * 1024); // 11 MB > 10 MB limit
 
       preflightSd.files
-        .upload({ ...baseParams, file })
+        .upload({ ...baseParams, file, maxUploadMBs: 10 })
         .subscribe({
           next: () => {
             done(new Error("Upload should have been rejected by preflight"));
@@ -697,113 +685,72 @@ describe("Files", () => {
             expect(e.maxBytes).toBe(10 * 1024 * 1024);
             expect(e.message).toMatch(/11\.00 MB/);
             expect(e.message).toMatch(/10\.00 MB/);
+            expect(nock.pendingMocks()).toEqual([]);
             done();
           },
         });
     });
 
-    it("skips the features fetch entirely when skipSizeCheck: true", (done) => {
-      const featuresScope = nock(BASE_URL)
-        .get(
-          "/api/v1/subscriptions/features/sidedrawer-id/preflight-sd"
-        )
-        .reply(200, { "sidedrawer.maxUploadMBs": "10" });
-
-      const file = generateBlob(50 * 1024 * 1024);
-
-      preflightSd.files
-        .upload({ ...baseParams, file, skipSizeCheck: true })
+    it("does NOT throw when the file is within the consumer-supplied limit", () => {
+      const file = generateBlob(5 * 1024 * 1024);
+      // The upload itself isn't mocked here; we only want to assert
+      // that the preflight does not reject synchronously. We just
+      // subscribe-and-immediately-unsubscribe to keep the test fast.
+      const sub = preflightSd.files
+        .upload({ ...baseParams, file, maxUploadMBs: 10 })
         .subscribe({
-          next: () => {},
+          error: (err: unknown) => {
+            // If anything errors, it MUST not be FileTooLargeError.
+            expect(err).not.toBeInstanceOf(FileTooLargeError);
+          },
+        });
+      sub.unsubscribe();
+    });
+
+    it("skips the check entirely when skipSizeCheck: true (even with a tiny limit)", () => {
+      const file = generateBlob(50 * 1024 * 1024);
+      const sub = preflightSd.files
+        .upload({
+          ...baseParams,
+          file,
+          maxUploadMBs: 1,
+          skipSizeCheck: true,
+        })
+        .subscribe({
           error: (err: unknown) => {
             expect(err).not.toBeInstanceOf(FileTooLargeError);
-            expect(featuresScope.isDone()).toBe(false);
-            done();
-          },
-          complete: () => {
-            expect(featuresScope.isDone()).toBe(false);
-            done();
           },
         });
+      sub.unsubscribe();
     });
 
-    it("fails open when the features endpoint errors", (done) => {
-      nock(BASE_URL)
-        .get(
-          "/api/v1/subscriptions/features/sidedrawer-id/preflight-sd"
-        )
-        .reply(500, { error: "boom" });
-
-      const warnSpy = jest
-        .spyOn(console, "warn")
-        .mockImplementation(() => undefined);
-
-      const file = generateBlob(50 * 1024 * 1024);
-
-      preflightSd.files
+    it("does nothing when maxUploadMBs is not provided (no fetch, no check)", () => {
+      const file = generateBlob(500 * 1024 * 1024);
+      const sub = preflightSd.files
         .upload({ ...baseParams, file })
         .subscribe({
-          next: () => {},
           error: (err: unknown) => {
             expect(err).not.toBeInstanceOf(FileTooLargeError);
-            expect(warnSpy).toHaveBeenCalled();
-            warnSpy.mockRestore();
-            done();
-          },
-          complete: () => {
-            warnSpy.mockRestore();
-            done();
           },
         });
+      sub.unsubscribe();
+      // No outbound HTTP for features/anything related to preflight.
+      expect(nock.pendingMocks()).toEqual([]);
     });
 
-    it("treats a missing / zero / unparseable maxUploadMBs as no limit", (done) => {
-      nock(BASE_URL)
-        .get(
-          "/api/v1/subscriptions/features/sidedrawer-id/preflight-sd"
-        )
-        .reply(200, { "sidedrawer.maxUploadMBs": "0" });
-
+    it("treats zero / negative / NaN / Infinity maxUploadMBs as no limit", () => {
       const file = generateBlob(50 * 1024 * 1024);
 
-      preflightSd.files
-        .upload({ ...baseParams, file })
-        .subscribe({
-          next: () => {},
-          error: (err: unknown) => {
-            expect(err).not.toBeInstanceOf(FileTooLargeError);
-            done();
-          },
-          complete: () => done(),
-        });
-    });
-
-    it("caches features per sidedrawerId across uploads (single GET for N uploads)", async () => {
-      const featuresScope = nock(BASE_URL)
-        .get(
-          "/api/v1/subscriptions/features/sidedrawer-id/preflight-sd"
-        )
-        .once()
-        .reply(200, { "sidedrawer.maxUploadMBs": "10" });
-
-      const file = generateBlob(11 * 1024 * 1024);
-
-      const expectTooLarge = (sd: SideDrawer) =>
-        new Promise<void>((resolve, reject) => {
-          sd.files.upload({ ...baseParams, file }).subscribe({
-            next: () => reject(new Error("expected FileTooLargeError")),
+      for (const badValue of [0, -1, NaN, Infinity]) {
+        const sub = preflightSd.files
+          .upload({ ...baseParams, file, maxUploadMBs: badValue })
+          .subscribe({
             error: (err: unknown) => {
-              if (err instanceof FileTooLargeError) resolve();
-              else reject(err);
+              expect(err).not.toBeInstanceOf(FileTooLargeError);
             },
           });
-        });
-
-      await expectTooLarge(preflightSd);
-      await expectTooLarge(preflightSd);
-
-      expect(featuresScope.isDone()).toBe(true);
-      expect(nock.pendingMocks()).toEqual([]);
+        sub.unsubscribe();
+      }
     });
   });
 
