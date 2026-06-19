@@ -13,6 +13,7 @@ import {
 
 import Context from "../core/Context";
 import HttpService from "../core/HttpService";
+import { HttpServiceError } from "../core/HttpServiceError";
 import { ExternalKeys, Metadata } from "../types/base";
 import { Abortable, ObservablePromise } from "../types/core";
 import { RecordFileDetail, RecordFileQueryParams } from "../types/files";
@@ -69,6 +70,22 @@ export type FileDownloadResponseType = "blob" | "arraybuffer";
 export interface FileDownloadOptions {
   responseType: FileDownloadResponseType;
   progressSubscriber$?: Subject<number>;
+}
+
+export interface FileGetDownloadUrlParams {
+  sidedrawerId: string;
+  recordId: string;
+  fileToken: string;
+  signal?: AbortSignal;
+}
+
+export interface FileTriggerNativeDownloadParams
+  extends FileGetDownloadUrlParams {
+  suggestedName?: string;
+}
+
+interface FileStreamRedirectResponse {
+  url?: string;
 }
 
 class UploadProcess {
@@ -421,6 +438,73 @@ export default class Files {
       responseType,
       onDownloadProgress,
     });
+  }
+
+  public getDownloadUrl(
+    params: FileGetDownloadUrlParams
+  ): Promise<string> {
+    const {
+      sidedrawerId = isRequired("sidedrawerId"),
+      recordId = isRequired("recordId"),
+      fileToken = isRequired("fileToken"),
+      signal,
+    } = params;
+
+    const url = `/api/v2/record-files/sidedrawer/sidedrawer-id/${sidedrawerId}/records/record-id/${recordId}/record-files/${fileToken}/stream`;
+
+    return new Promise<string>((resolve, reject) => {
+      this.context.http
+        .get<FileStreamRedirectResponse>(url, {
+          headers: { Range: "bytes=0-" },
+          signal,
+        })
+        .subscribe({
+          next: (data) => {
+            if (!data || typeof data.url !== "string" || data.url.length === 0) {
+              reject(
+                new HttpServiceError(
+                  "Files.getDownloadUrl: unexpected response shape (missing url)",
+                  "ERR_BAD_RESPONSE",
+                  { url },
+                  undefined
+                )
+              );
+              return;
+            }
+            resolve(data.url);
+          },
+          error: (err) => reject(err),
+        });
+    });
+  }
+
+  public async triggerNativeDownload(
+    params: FileTriggerNativeDownloadParams
+  ): Promise<void> {
+    if (typeof document === "undefined") {
+      throw new HttpServiceError(
+        "Files.triggerNativeDownload requires a browser environment (no `document` available). Use `getDownloadUrl()` if you need the raw URL in a non-browser context.",
+        "ERR_NOT_BROWSER",
+        undefined,
+        undefined
+      );
+    }
+
+    const { suggestedName: _suggestedName, ...urlParams } = params;
+    const url = await this.getDownloadUrl(urlParams);
+
+    const iframe = document.createElement("iframe");
+    iframe.style.display = "none";
+    iframe.setAttribute("aria-hidden", "true");
+    iframe.src = url;
+
+    document.body.appendChild(iframe);
+
+    setTimeout(() => {
+      if (iframe.parentNode) {
+        iframe.parentNode.removeChild(iframe);
+      }
+    }, 60_000);
   }
 }
 

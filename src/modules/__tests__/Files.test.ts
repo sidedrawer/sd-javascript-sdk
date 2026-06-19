@@ -3,6 +3,7 @@ import { Buffer } from "node:buffer";
 import "../../extensions/global/crypto.node";
 
 import SideDrawer, { FileUploadOptions, FileUploadParams } from "../..";
+import { HttpServiceError } from "../../core/HttpServiceError";
 import nock from "nock";
 import { Subject } from "rxjs";
 
@@ -676,4 +677,332 @@ describe("Files", () => {
     },
     1000 * 5
   );
+
+  describe("Files.getDownloadUrl", () => {
+    const STREAM_URL_PATH =
+      "/api/v2/record-files/sidedrawer/sidedrawer-id/test/records/record-id/test/record-files/token-abc/stream";
+    const SIGNED_URL =
+      "https://blocks-gateway-api-sbx.sidedrawersbx.com/api/v2/record-files/sidedrawer/sidedrawer-id/test/records/record-id/test/record-files/token-abc?Bearer=eyJ.fake.token";
+
+    it("rejects when required params are missing", async () => {
+      const requiredParams = [
+        "sidedrawerId",
+        "recordId",
+        "fileToken",
+      ] as const;
+
+      expect.assertions(requiredParams.length * 3);
+
+      const baseParams: any = {
+        sidedrawerId: "test",
+        recordId: "test",
+        fileToken: "token-abc",
+      };
+
+      for (const param of requiredParams) {
+        const params = { ...baseParams, [param]: undefined };
+        try {
+          await sd.files.getDownloadUrl(params);
+        } catch (err: any) {
+          expect(err).not.toBe(undefined);
+          expect(err.message).toContain("required");
+          expect(err.message).toContain(param);
+        }
+      }
+    });
+
+    it("hits the /stream endpoint with Range bytes=0- and resolves with the signed URL", async () => {
+      let observedRangeHeader: string | undefined;
+      let observedUrlPath: string | undefined;
+
+      nock(BASE_URL)
+        .get(STREAM_URL_PATH)
+        .reply(200, function (uri: string) {
+          observedUrlPath = uri;
+          observedRangeHeader = this.req.headers["range"] as string | undefined;
+          return { url: SIGNED_URL };
+        });
+
+      const url = await sd.files.getDownloadUrl({
+        sidedrawerId: "test",
+        recordId: "test",
+        fileToken: "token-abc",
+      });
+
+      expect(observedUrlPath).toBe(STREAM_URL_PATH);
+      expect(observedRangeHeader).toBe("bytes=0-");
+      expect(url).toBe(SIGNED_URL);
+    });
+
+    it("rejects with ERR_BAD_RESPONSE when the backend response is missing `url`", async () => {
+      nock(BASE_URL)
+        .get(STREAM_URL_PATH)
+        .reply(200, { somethingElse: "no-url-here" });
+
+      expect.assertions(2);
+
+      try {
+        await sd.files.getDownloadUrl({
+          sidedrawerId: "test",
+          recordId: "test",
+          fileToken: "token-abc",
+        });
+      } catch (err) {
+        expect(err).toBeInstanceOf(HttpServiceError);
+        expect((err as HttpServiceError).code).toBe("ERR_BAD_RESPONSE");
+      }
+    });
+
+    it("rejects with ERR_BAD_RESPONSE when `url` is an empty string", async () => {
+      nock(BASE_URL).get(STREAM_URL_PATH).reply(200, { url: "" });
+
+      expect.assertions(2);
+
+      try {
+        await sd.files.getDownloadUrl({
+          sidedrawerId: "test",
+          recordId: "test",
+          fileToken: "token-abc",
+        });
+      } catch (err) {
+        expect(err).toBeInstanceOf(HttpServiceError);
+        expect((err as HttpServiceError).code).toBe("ERR_BAD_RESPONSE");
+      }
+    });
+
+    it("surfaces HttpServiceError on non-2xx response", async () => {
+      nock(BASE_URL)
+        .get(STREAM_URL_PATH)
+        .reply(404, { message: "not_found", statusCode: 404 });
+
+      expect.assertions(3);
+
+      try {
+        await sd.files.getDownloadUrl({
+          sidedrawerId: "test",
+          recordId: "test",
+          fileToken: "token-abc",
+        });
+      } catch (err) {
+        expect(err).toBeInstanceOf(HttpServiceError);
+        const e = err as HttpServiceError & {
+          response?: { status?: number; data?: { message?: string } };
+        };
+        expect(e.response?.status).toBe(404);
+        expect(e.response?.data?.message).toBe("not_found");
+      }
+    });
+
+    it("propagates AbortSignal cancellation", async () => {
+      nock(BASE_URL)
+        .get(STREAM_URL_PATH)
+        .delay(200)
+        .reply(200, { url: SIGNED_URL });
+
+      const controller = new AbortController();
+      const pending = sd.files.getDownloadUrl({
+        sidedrawerId: "test",
+        recordId: "test",
+        fileToken: "token-abc",
+        signal: controller.signal,
+      });
+
+      queueMicrotask(() => controller.abort());
+
+      expect.assertions(2);
+
+      try {
+        await pending;
+      } catch (err) {
+        expect(err).toBeInstanceOf(HttpServiceError);
+        expect((err as HttpServiceError).code).toBe("ERR_CANCELED");
+      }
+    });
+  });
+
+  describe("Files.triggerNativeDownload", () => {
+    const STREAM_URL_PATH =
+      "/api/v2/record-files/sidedrawer/sidedrawer-id/test/records/record-id/test/record-files/token-abc/stream";
+    const SIGNED_URL =
+      "https://blocks-gateway-api-sbx.sidedrawersbx.com/api/v2/record-files/sidedrawer/sidedrawer-id/test/records/record-id/test/record-files/token-abc?Bearer=eyJ.fake.token";
+
+    type FakeIframe = {
+      src: string;
+      style: { display: string };
+      setAttribute: jest.Mock;
+      parentNode: { removeChild: jest.Mock } | null;
+    };
+
+    function installFakeDom(): {
+      iframe: FakeIframe;
+      createElement: jest.Mock;
+      appendChild: jest.Mock;
+      setTimeoutSpy: jest.SpyInstance;
+      runScheduledCleanup: () => void;
+      cleanup: () => void;
+    } {
+      const iframe: FakeIframe = {
+        src: "",
+        style: { display: "" },
+        setAttribute: jest.fn(),
+        parentNode: null,
+      };
+      const appendChild = jest.fn((node: FakeIframe) => {
+        node.parentNode = {
+          removeChild: jest.fn(() => {
+            node.parentNode = null;
+          }),
+        };
+      });
+      const createElement = jest.fn(() => iframe);
+      const fakeDocument = {
+        createElement,
+        body: { appendChild },
+      };
+      const previousDocument = (globalThis as any).document;
+      (globalThis as any).document = fakeDocument;
+
+      let capturedCb: (() => void) | undefined;
+      const setTimeoutSpy = jest
+        .spyOn(globalThis, "setTimeout")
+        .mockImplementation((cb: any, _ms?: number) => {
+          capturedCb = cb;
+          return 0 as unknown as ReturnType<typeof setTimeout>;
+        });
+
+      return {
+        iframe,
+        createElement,
+        appendChild,
+        setTimeoutSpy,
+        runScheduledCleanup: () => {
+          if (capturedCb) capturedCb();
+        },
+        cleanup: () => {
+          setTimeoutSpy.mockRestore();
+          if (previousDocument === undefined) {
+            delete (globalThis as any).document;
+          } else {
+            (globalThis as any).document = previousDocument;
+          }
+        },
+      };
+    }
+
+    it("throws synchronously when run outside a browser (no `document`)", async () => {
+      const previousDocument = (globalThis as any).document;
+      delete (globalThis as any).document;
+
+      expect.assertions(2);
+
+      try {
+        await sd.files.triggerNativeDownload({
+          sidedrawerId: "test",
+          recordId: "test",
+          fileToken: "token-abc",
+        });
+      } catch (err) {
+        expect(err).toBeInstanceOf(HttpServiceError);
+        expect((err as HttpServiceError).code).toBe("ERR_NOT_BROWSER");
+      } finally {
+        if (previousDocument !== undefined) {
+          (globalThis as any).document = previousDocument;
+        }
+      }
+    });
+
+    it("fetches the signed URL and inserts a hidden iframe pointing at it", async () => {
+      nock(BASE_URL).get(STREAM_URL_PATH).reply(200, { url: SIGNED_URL });
+
+      const { iframe, createElement, appendChild, cleanup } = installFakeDom();
+      try {
+        await sd.files.triggerNativeDownload({
+          sidedrawerId: "test",
+          recordId: "test",
+          fileToken: "token-abc",
+          suggestedName: "my-file.pdf",
+        });
+
+        expect(createElement).toHaveBeenCalledWith("iframe");
+        expect(iframe.src).toBe(SIGNED_URL);
+        expect(iframe.style.display).toBe("none");
+        expect(iframe.setAttribute).toHaveBeenCalledWith("aria-hidden", "true");
+        expect(appendChild).toHaveBeenCalledWith(iframe);
+        expect(createElement).toHaveBeenCalledTimes(1);
+      } finally {
+        cleanup();
+      }
+    });
+
+    it("schedules iframe cleanup ~60s later and the callback removes it", async () => {
+      nock(BASE_URL).get(STREAM_URL_PATH).reply(200, { url: SIGNED_URL });
+
+      const {
+        iframe,
+        setTimeoutSpy,
+        runScheduledCleanup,
+        cleanup,
+      } = installFakeDom();
+      try {
+        await sd.files.triggerNativeDownload({
+          sidedrawerId: "test",
+          recordId: "test",
+          fileToken: "token-abc",
+        });
+
+        expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 60_000);
+        expect(iframe.parentNode).not.toBeNull();
+
+        runScheduledCleanup();
+        expect(iframe.parentNode).toBeNull();
+      } finally {
+        cleanup();
+      }
+    });
+
+    it("propagates errors from getDownloadUrl without inserting an iframe", async () => {
+      nock(BASE_URL)
+        .get(STREAM_URL_PATH)
+        .reply(404, { message: "not_found", statusCode: 404 });
+
+      const { appendChild, cleanup } = installFakeDom();
+      expect.assertions(3);
+
+      try {
+        await sd.files.triggerNativeDownload({
+          sidedrawerId: "test",
+          recordId: "test",
+          fileToken: "token-abc",
+        });
+      } catch (err) {
+        expect(err).toBeInstanceOf(HttpServiceError);
+        const e = err as HttpServiceError & {
+          response?: { status?: number };
+        };
+        expect(e.response?.status).toBe(404);
+        expect(appendChild).not.toHaveBeenCalled();
+      } finally {
+        cleanup();
+      }
+    });
+
+    it("rejects when fileToken is missing (same validation as getDownloadUrl)", async () => {
+      const { appendChild, cleanup } = installFakeDom();
+      expect.assertions(3);
+
+      try {
+        await sd.files.triggerNativeDownload({
+          sidedrawerId: "test",
+          recordId: "test",
+          fileToken: undefined as unknown as string,
+        });
+      } catch (err: any) {
+        expect(err).not.toBe(undefined);
+        expect(err.message).toContain("fileToken");
+        expect(appendChild).not.toHaveBeenCalled();
+      } finally {
+        cleanup();
+      }
+    });
+  });
 });
