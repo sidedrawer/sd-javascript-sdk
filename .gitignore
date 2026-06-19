@@ -132,3 +132,6 @@ dist
 
 temp/
 .sfdx/
+
+# Local sandbox app for manual SDK smoke testing — never committed.
+sandbox/
