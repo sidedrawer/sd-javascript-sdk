@@ -7,6 +7,7 @@ import type {
 } from "./Files";
 import type Files from "./Files";
 import { HttpServiceError } from "../core/HttpServiceError";
+import type { DownloadSink } from "./sinks/types";
 
 /**
  * Possible states of a {@link DownloadSession}.
@@ -127,8 +128,31 @@ export interface DownloadSessionParams
    * they arrive (memory-safe) and the session survives page reloads.
    * When omitted, the session keeps chunks in-memory: pause/resume still
    * work within the session lifetime, but a page reload loses progress.
+   *
+   * When combined with a {@link sink}, the storage holds ONLY the small
+   * metadata record (offset, sessionId, etc.) — the bytes themselves
+   * live in whatever destination the sink writes to. This is the
+   * recommended setup for very large files: pause/resume across reloads
+   * with flat RAM usage and no IndexedDB-size pressure.
    */
   storage?: DownloadSessionStorage;
+  /**
+   * Optional streaming destination for the downloaded bytes. When set:
+   *  - `discardBuffer` is forced on in the underlying HTTP layer
+   *  - every chunk is piped to `sink.write` as it arrives
+   *  - `sink.close()` runs on successful completion
+   *  - `sink.abort()` runs on cancel / error
+   *  - the {@link DownloadSessionStorage} (if any) stores only metadata,
+   *    not chunks, so IndexedDB stays small regardless of file size
+   *  - `result$` emits `null` on completion (the bytes are already at
+   *    their final destination — the sink owns them)
+   *
+   * For cross-session resumable downloads with stream-to-disk, pair this
+   * with `restoreFileSystemResumableSink` on the resume path so the same
+   * file handle is reused (after a re-permission prompt from the
+   * browser).
+   */
+  sink?: DownloadSink;
 }
 
 /**
@@ -167,7 +191,8 @@ export class DownloadSession {
   private readonly files: Files;
   private readonly params: DownloadSessionParams;
   private readonly storage?: DownloadSessionStorage;
-  /** In-memory chunk store used when no storage adapter is configured. */
+  private readonly sink?: DownloadSink;
+  /** In-memory chunk store used when no storage adapter and no sink are configured. */
   private inMemoryChunks: { offset: number; data: Uint8Array }[] = [];
   private currentController?: AbortController;
   /** Captures the intent of the latest abort so the catch can branch. */
@@ -191,6 +216,7 @@ export class DownloadSession {
     this.files = files;
     this.params = params;
     this.storage = params.storage;
+    this.sink = params.sink;
     this.id = params.sessionId ?? deriveSessionId(params);
   }
 
@@ -264,6 +290,14 @@ export class DownloadSession {
     this._state$.next("canceled");
     this.currentController?.abort();
     this.inMemoryChunks = [];
+    if (this.sink) {
+      // Tear down the sink so its underlying resource (file handle,
+      // stream, IDB cursor, …) is released. The download is canceled
+      // and the partially-written destination is no longer trusted.
+      Promise.resolve(this.sink.abort(new Error("DownloadSession: canceled"))).catch(() => {
+        /* best-effort: sink failures during cancel should not crash */
+      });
+    }
     if (this.storage) {
       // Drain pending IDB writes first so they don't repopulate after
       // clear(). If any are in flight when cancel() is called, awaiting
@@ -319,10 +353,13 @@ export class DownloadSession {
     this._state$.next("running");
     this.currentController = new AbortController();
 
-    // When we have storage, we want memory-safety: discard buffer in the
-    // HTTP layer and persist via onChunk. Without storage, we accumulate
-    // in-memory and let the SDK build the final blob for us.
+    // Memory-safe streaming is enabled when we either have a sink
+    // (bytes go straight to its destination) or a storage adapter
+    // (bytes get persisted as they arrive). Without either, we let the
+    // SDK accumulate a full blob in memory.
     const useStorage = this.storage != null;
+    const useSink = this.sink != null;
+    const streaming = useStorage || useSink;
 
     try {
       const responseType =
@@ -344,7 +381,7 @@ export class DownloadSession {
             fileNameWithExtension: this.params.fileNameWithExtension,
             responseType,
             resumeFrom: offset,
-            discardBuffer: useStorage,
+            discardBuffer: streaming,
             signal: this.currentController!.signal,
             onDownloadProgress: (event) => {
               // total may be undefined when Content-Length is missing
@@ -390,7 +427,7 @@ export class DownloadSession {
         void subscription;
       });
 
-      await this.handleCompletion(result, useStorage);
+      await this.handleCompletion(result, useStorage, useSink);
     } catch (err) {
       this.handleError(err);
     } finally {
@@ -404,20 +441,32 @@ export class DownloadSession {
   ): Promise<void> {
     const nextOffset = offsetFromStart + chunk.byteLength;
 
-    if (this.storage) {
-      try {
+    try {
+      if (this.sink) {
+        // Sink owns the bytes — write them out (to disk, OPFS, etc.)
+        // and let storage hold only the small metadata record. Chunks
+        // are not duplicated in IDB so this stays memory- and
+        // disk-efficient regardless of file size.
+        await this.sink.write(chunk);
+        if (this.storage) {
+          await this.storage.saveMeta(this.id, this.buildMeta(nextOffset));
+        }
+      } else if (this.storage) {
         await this.storage.saveChunk(this.id, offsetFromStart, chunk);
         await this.storage.saveMeta(this.id, this.buildMeta(nextOffset));
-      } catch (err) {
-        // Surface the storage failure as a session failure.
-        this._state$.next("failed");
-        this._result$.error(err);
-        this.currentController?.abort();
-        return;
+      } else {
+        // No sink + no storage — keep in memory so a pause/resume cycle
+        // within the same JS context can still reassemble.
+        this.inMemoryChunks.push({ offset: offsetFromStart, data: chunk });
       }
-    } else {
-      // Keep in memory so a subsequent pause/resume can assemble.
-      this.inMemoryChunks.push({ offset: offsetFromStart, data: chunk });
+    } catch (err) {
+      // Surface the persistence failure (sink or storage) as a session
+      // failure so subscribers stop waiting on a download that won't
+      // resolve.
+      this._state$.next("failed");
+      this._result$.error(err);
+      this.currentController?.abort();
+      return;
     }
 
     const previous = this._progress$.value;
@@ -434,10 +483,12 @@ export class DownloadSession {
 
   private async handleCompletion(
     sdkResult: DownloadResponse,
-    useStorage: boolean
+    useStorage: boolean,
+    useSink: boolean
   ): Promise<void> {
-    // Drain any in-flight IDB writes BEFORE checking state — a pause()
-    // that lands while we're still persisting should be respected.
+    // Drain any in-flight IDB / sink writes BEFORE checking state — a
+    // pause() that lands while we're still persisting should be
+    // respected.
     if (this.pendingChunkWrites.length > 0) {
       const inFlight = this.pendingChunkWrites;
       this.pendingChunkWrites = [];
@@ -452,7 +503,25 @@ export class DownloadSession {
 
     let finalResult: DownloadResponse;
 
-    if (useStorage && this.storage) {
+    if (useSink && this.sink) {
+      // Sink owns the bytes. Flush + close the destination, then clear
+      // any session metadata. result$ emits null because the consumer
+      // already chose where the bytes live (disk / OPFS / …) and the
+      // SDK doesn't hold a copy.
+      try {
+        await this.sink.close();
+      } catch (err) {
+        this._state$.next("failed");
+        this._result$.error(err);
+        return;
+      }
+      if (this.storage) {
+        await this.storage.clear(this.id).catch(() => {
+          /* best-effort */
+        });
+      }
+      finalResult = null;
+    } else if (useStorage && this.storage) {
       // Reassemble from persisted chunks (sorted by offset per storage
       // contract). Then clear the persisted state.
       const chunks = await this.storage.loadChunks(this.id);

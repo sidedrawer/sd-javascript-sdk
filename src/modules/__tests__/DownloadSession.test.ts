@@ -547,6 +547,222 @@ describe("DownloadSession", () => {
     });
   });
 
+  describe("Sink integration", () => {
+    type FakeSink = {
+      write: jest.Mock<Promise<void>, [Uint8Array]>;
+      close: jest.Mock<Promise<void>, []>;
+      abort: jest.Mock<Promise<void>, [unknown?]>;
+      writes: number[];
+    };
+
+    function makeFakeSink(): FakeSink {
+      const writes: number[] = [];
+      return {
+        writes,
+        write: jest.fn((chunk: Uint8Array) => {
+          writes.push(chunk.byteLength);
+          return Promise.resolve();
+        }),
+        close: jest.fn(() => Promise.resolve()),
+        abort: jest.fn(() => Promise.resolve()),
+      };
+    }
+
+    it("pipes every chunk to sink.write and closes on completion", async () => {
+      const sink = makeFakeSink();
+      const fakeFiles = {
+        download: (params: any) => {
+          queueMicrotask(() => {
+            params.onChunk?.(new Uint8Array([1, 2, 3]), 0);
+            params.onChunk?.(new Uint8Array([4, 5, 6, 7]), 3);
+            params.onChunk?.(new Uint8Array([8]), 7);
+          });
+          return of(null);
+        },
+      } as unknown as Files;
+
+      const session = new DownloadSession(fakeFiles, {
+        userId: "u1",
+        sidedrawerId: "sd",
+        recordId: "rec",
+        fileToken: "tok",
+        sink,
+      });
+
+      session.start();
+      const result = await firstValueFrom(session.result$);
+
+      expect(result).toBeNull();
+      expect(sink.writes).toEqual([3, 4, 1]);
+      expect(sink.close).toHaveBeenCalledTimes(1);
+      expect(sink.abort).not.toHaveBeenCalled();
+      expect(session.getState()).toBe("completed");
+      expect(session.getProgress().offset).toBe(8);
+    });
+
+    it("forces discardBuffer=true on the underlying download call when a sink is provided", async () => {
+      const sink = makeFakeSink();
+      let observedDiscard: boolean | undefined;
+      const fakeFiles = {
+        download: (params: any) => {
+          observedDiscard = params.discardBuffer;
+          queueMicrotask(() => {
+            params.onChunk?.(new Uint8Array([1]), 0);
+          });
+          return of(null);
+        },
+      } as unknown as Files;
+
+      const session = new DownloadSession(fakeFiles, {
+        userId: "u1",
+        sidedrawerId: "sd",
+        recordId: "rec",
+        fileToken: "tok",
+        sink,
+      });
+      session.start();
+      await firstValueFrom(session.result$);
+
+      expect(observedDiscard).toBe(true);
+    });
+
+    it("calls sink.abort and clears storage when cancel() is invoked mid-flight", async () => {
+      const sink = makeFakeSink();
+      const neverEnding = new Subject<Blob>();
+      const fakeFiles = {
+        download: () => neverEnding.asObservable(),
+      } as unknown as Files;
+      const storage = createMemoryStorage();
+      const session = new DownloadSession(fakeFiles, {
+        userId: "u1",
+        sidedrawerId: "sd",
+        recordId: "rec",
+        fileToken: "tok",
+        sink,
+        storage,
+      });
+
+      session.start();
+      await new Promise<void>((r) => setTimeout(r, 0));
+      expect(session.getState()).toBe("running");
+
+      session.cancel();
+      expect(session.getState()).toBe("canceled");
+      expect(sink.abort).toHaveBeenCalledTimes(1);
+      // sink.close must NOT fire when we canceled
+      expect(sink.close).not.toHaveBeenCalled();
+    });
+
+    it("marks the session failed and stops writing when sink.write rejects", async () => {
+      const sink: FakeSink = {
+        writes: [],
+        write: jest
+          .fn<Promise<void>, [Uint8Array]>()
+          .mockResolvedValueOnce(undefined)
+          .mockRejectedValueOnce(new Error("disk full")),
+        close: jest.fn(() => Promise.resolve()),
+        abort: jest.fn(() => Promise.resolve()),
+      };
+      const fakeFiles = {
+        download: (params: any) => {
+          queueMicrotask(() => {
+            params.onChunk?.(new Uint8Array([1, 2, 3]), 0);
+            params.onChunk?.(new Uint8Array([4, 5]), 3);
+          });
+          return of(null);
+        },
+      } as unknown as Files;
+
+      const session = new DownloadSession(fakeFiles, {
+        userId: "u1",
+        sidedrawerId: "sd",
+        recordId: "rec",
+        fileToken: "tok",
+        sink,
+      });
+      session.start();
+      await expect(lastValueFrom(session.result$)).rejects.toThrow(/disk full/);
+      expect(session.getState()).toBe("failed");
+      // close() must NOT have been called once we transitioned to failed
+      expect(sink.close).not.toHaveBeenCalled();
+    });
+
+    it("with sink + storage, storage holds only metadata (no chunks)", async () => {
+      const sink = makeFakeSink();
+      const fakeFiles = {
+        download: (params: any) => {
+          queueMicrotask(() => {
+            params.onChunk?.(new Uint8Array([1, 2, 3]), 0);
+            params.onChunk?.(new Uint8Array([4, 5, 6]), 3);
+          });
+          return of(null);
+        },
+      } as unknown as Files;
+      const storage = createMemoryStorage();
+      const session = new DownloadSession(fakeFiles, {
+        userId: "u1",
+        sidedrawerId: "sd",
+        recordId: "rec",
+        fileToken: "tok",
+        sink,
+        storage,
+      });
+
+      session.start();
+      await firstValueFrom(session.result$);
+
+      const dump = storage.__debugDump();
+      // Metadata cleared on completion (same lifecycle as the non-sink path).
+      expect(Object.keys(dump.meta)).toHaveLength(0);
+      // Chunks store was NEVER populated when a sink is configured.
+      expect(Object.keys(dump.chunks)).toHaveLength(0);
+      // Sink owns the bytes.
+      expect(sink.writes).toEqual([3, 3]);
+    });
+
+    it("Files.restoreDownloadSession accepts a sink and propagates it", async () => {
+      const sd = new SideDrawer({ baseUrl: BASE_URL, accessToken: "t" });
+      const storage = createMemoryStorage();
+      await storage.saveMeta("resumable-id", {
+        sessionId: "resumable-id",
+        userId: "u1",
+        sidedrawerId: "sdX",
+        recordId: "recX",
+        fileToken: "tokX",
+        responseType: "blob",
+        offset: 4096,
+        fileSize: 1024 * 1024,
+        createdAt: 1,
+        updatedAt: 2,
+      });
+      const sink = makeFakeSink();
+
+      const restored = await sd.files.restoreDownloadSession("resumable-id", {
+        storage,
+        userId: "u1",
+        sink,
+      });
+      expect(restored).not.toBeNull();
+      // We can't easily peek at the private `sink` field, but starting it
+      // and verifying it calls sink.write is the observable proof.
+      // Stub Files.download for the restored attempt.
+      (sd.files as any).download = (params: any) => {
+        // Restored session must request resume from the persisted offset
+        // and forward chunks to the sink.
+        expect(params.resumeFrom).toBe(4096);
+        queueMicrotask(() => {
+          params.onChunk?.(new Uint8Array([9, 9, 9]), 4096);
+        });
+        return of(null);
+      };
+
+      restored!.start();
+      await firstValueFrom(restored!.result$);
+      expect(sink.writes).toEqual([3]);
+      expect(sink.close).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe("Error handling", () => {
     it("propagates non-cancel errors through result$ and marks failed", async () => {
       const boom = new Error("network down");

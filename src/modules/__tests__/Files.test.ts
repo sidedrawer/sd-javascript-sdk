@@ -5,6 +5,7 @@ import "../../extensions/global/crypto.node";
 import SideDrawer, {
   ERR_FILE_TOO_LARGE,
   ERR_PAYLOAD_TOO_LARGE,
+  ERR_TOO_MANY_BLOCKS,
   FileTooLargeError,
   FileUploadOptions,
   FileUploadParams,
@@ -818,6 +819,68 @@ describe("Files", () => {
             // can still read the backend's exact wording if needed.
             expect(e.response?.status).toBe(409);
             expect(e.response?.data?.message).toBe("payload_too_large");
+            done();
+          },
+        });
+    },
+    1000 * 10
+  );
+
+  it(
+    "Files.upload finalize 409 cant_upload_block surfaces ERR_TOO_MANY_BLOCKS",
+    (done) => {
+      const file = generateBlob(1 * 1024 * 1024 + 1024); // 2 blocks
+
+      nock(BASE_URL)
+        .post(
+          `/api/v2/blocks/sidedrawer/sidedrawer-id/test/records/record-id/test/upload`
+        )
+        .query(true)
+        .times(2)
+        .reply(200, (uri) => {
+          const url = new URL(`${BASE_URL}${uri}`);
+          const order = parseInt(
+            url.searchParams.get("order") as string,
+            10
+          );
+          return { hash: `hash-${order}`, order };
+        });
+
+      nock(BASE_URL)
+        .post(
+          `/api/v2/record-files/sidedrawer/sidedrawer-id/test/records/record-id/test/record-files`
+        )
+        .query(true)
+        .reply(409, {
+          statusCode: 409,
+          message: "cant_upload_block",
+          error: "conflict_exception",
+        });
+
+      sd.files
+        .upload({
+          sidedrawerId: "test",
+          recordId: "test",
+          file,
+          fileName: "browser-test",
+          uploadTitle: "many-blocks.bin",
+          fileType: "document",
+          maxChunkSizeBytes: 1024 * 1024,
+        })
+        .subscribe({
+          next: () => {
+            expect(true).toBe(false);
+          },
+          error: (err: unknown) => {
+            expect(err).toBeInstanceOf(HttpServiceError);
+            const e = err as HttpServiceError & {
+              response?: { status?: number; data?: { message?: string } };
+            };
+            expect(e.code).toBe(ERR_TOO_MANY_BLOCKS);
+            expect(e.message).toMatch(/cant_upload_block/);
+            expect(e.message).toMatch(/maxChunkSizeBytes/);
+            expect(e.response?.status).toBe(409);
+            expect(e.response?.data?.message).toBe("cant_upload_block");
             done();
           },
         });

@@ -43,6 +43,18 @@ export const ERR_FILE_TOO_LARGE = "ERR_FILE_TOO_LARGE";
  */
 export const ERR_PAYLOAD_TOO_LARGE = "ERR_PAYLOAD_TOO_LARGE";
 
+/**
+ * Error code used when the backend rejects the finalize step (`createRecordFile`)
+ * with a `cant_upload_block` message. Empirically this happens when the manifest
+ * holds too many blocks: every individual block upload succeeds with 200, then
+ * the finalize POST replies HTTP 409 + `{ message: "cant_upload_block" }`.
+ *
+ * The exact threshold is backend-driven (>=475 reproduces it today on SBX with
+ * 4 MB chunks). The workaround is to raise `maxChunkSizeBytes` so the resulting
+ * block count stays below that threshold.
+ */
+export const ERR_TOO_MANY_BLOCKS = "ERR_TOO_MANY_BLOCKS";
+
 export class FileTooLargeError extends Error {
   public readonly code = ERR_FILE_TOO_LARGE;
 
@@ -454,6 +466,19 @@ function enrichFinalizeError(err: unknown): unknown {
     );
     return enriched;
   }
+  if (message === "cant_upload_block") {
+    const enriched = new HttpServiceError(
+      `Upload rejected by server at finalize: cant_upload_block (status ${
+        response?.status ?? "?"
+      }). Every block uploaded successfully but the server refused to assemble the file. ` +
+        `This is usually caused by exceeding the backend's per-file block limit; ` +
+        `retry with a larger \`maxChunkSizeBytes\` to reduce the number of blocks.`,
+      ERR_TOO_MANY_BLOCKS,
+      err.request,
+      err.response
+    );
+    return enriched;
+  }
   return err;
 }
 
@@ -806,7 +831,11 @@ export default class Files {
    */
   public async restoreDownloadSession(
     sessionId: string,
-    options: { storage: DownloadSessionStorage; userId?: string }
+    options: {
+      storage: DownloadSessionStorage;
+      userId?: string;
+      sink?: DownloadSink;
+    }
   ): Promise<DownloadSession | null> {
     const userId = this.resolveUserId(options.userId);
     const meta = await options.storage.loadMeta(sessionId);
@@ -826,6 +855,7 @@ export default class Files {
       responseType: meta.responseType,
       sessionId,
       storage: options.storage,
+      sink: options.sink,
     });
   }
 
