@@ -1,4 +1,4 @@
-import { Metadata } from "./base";
+import { ExternalKeys, Metadata } from "./base";
 
 export interface FileBlock {
   hash: string;
@@ -38,4 +38,59 @@ export interface RecordFileQueryParams {
   envelopeId?: string;
   correlationId?: string;
   fileExtension?: string;
+}
+
+/**
+ * Params for uploading a file to a Smart Forms Request item.
+ *
+ * Provide `sidedrawerId` for end-user (sidedrawer-scoped) finalize, or
+ * `smartFormId` for admin finalize. Block upload always needs `sidedrawerId`,
+ * so admin callers should pass both `smartFormId` and `sidedrawerId`.
+ * When `smartFormId` is set, finalize uses the admin-scoped endpoint.
+ */
+export interface SmartFormRequestUploadParams extends RecordFileQueryParams {
+  smartFormRequestId: string;
+  smartFormItemId: string;
+  recordId: string;
+  file: File | Blob;
+  sidedrawerId?: string;
+  smartFormId?: string;
+  metadata?: Metadata;
+  externalKeys?: ExternalKeys;
+}
+
+/**
+ * Response from Smart Forms Request record-file finalize endpoints.
+ * Shape confirmed against api-uat (SPD-2900); similar to RecordFileDetail
+ * with a few SFR-specific / extra fields observed on 201.
+ */
+export interface SmartFormRequestFileResponse {
+  _id: string;
+  fileToken: string;
+  fileName: string;
+  caption: string;
+  uploadTitle: string;
+  fileExtension: string;
+  fileSize: number;
+  fileType: string;
+  format: string;
+  uploader: string;
+  sidedrawer: string;
+  recordDetail: string;
+  blocks: FileBlock[];
+  checkSum: string;
+  displayType?: string;
+  correlationId?: string;
+  sourceModel?: string;
+  expiryDate?: string;
+  createdAt: string;
+  updatedAt: string;
+  active: boolean;
+  quarantined: boolean;
+  cloudStorage: boolean;
+  sealed?: boolean;
+  locked?: boolean;
+  toSoftDelete?: boolean;
+  toHardDelete?: boolean;
+  metadata?: Metadata | unknown[];
 }

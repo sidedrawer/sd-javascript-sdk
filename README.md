@@ -96,6 +96,53 @@ await sd.files.upload({
 });
 ```
 
+Upload File to a Smart Forms Request
+
+```typescript
+const sd = new SideDrawer({
+    accessToken: '...'
+});
+
+const controller = new AbortController();
+const file = document.querySelector('#file-input').files[0];
+
+const progressSubscriber$ = new rxjs.Subject<number>();
+
+progressSubscriber$.subscribe((progressPercentage: number) => {
+    console.log(`Upload progress: ${progressPercentage}`);
+});
+
+// End-user / sidedrawer-scoped (e.g. my-web)
+await sd.files.uploadToSmartFormRequest({
+  sidedrawerId: "...",
+  smartFormRequestId: "...",
+  smartFormItemId: "...",
+  recordId: "...",
+  file,
+  fileName: "...",
+  uploadTitle: "...",
+  fileType: "document",
+  fileExtension: "pdf",
+  progressSubscriber$,
+  signal: controller.signal,
+  maxRetries: 2,
+  maxConcurrency: 4,
+});
+
+// Admin-scoped finalize (e.g. console) — still pass sidedrawerId for block upload
+await sd.files.uploadToSmartFormRequest({
+  smartFormId: "...",
+  sidedrawerId: "...",
+  smartFormRequestId: "...",
+  smartFormItemId: "...",
+  recordId: "...",
+  file,
+  fileName: "...",
+  uploadTitle: "...",
+  fileType: "document",
+});
+```
+
 Download File from a Record
 
 Browser:

@@ -18,6 +18,7 @@ describe("main", () => {
     it("files", () => {
       expect(sd.files).not.toEqual(undefined);
       expect(sd.files.upload).not.toEqual(undefined);
+      expect(sd.files.uploadToSmartFormRequest).not.toEqual(undefined);
     });
   });
 });

@@ -413,6 +413,294 @@ describe("Files", () => {
     }
   });
 
+  describe("Files.uploadToSmartFormRequest", () => {
+    const sfrResponse = {
+      _id: "sfr-file-1",
+      fileToken: "token-1",
+      fileName: "test.pdf",
+      caption: "Test",
+      uploadTitle: "Test",
+      fileExtension: "pdf",
+      fileSize: 1024,
+      fileType: "document",
+      format: "blocks",
+      uploader: "user-1",
+      sidedrawer: "test",
+      recordDetail: "test-detail",
+      blocks: [{ hash: "hash-1", order: 1 }],
+      checkSum: "abc",
+      correlationId: "",
+      displayType: "review",
+      createdAt: "2026-07-30T15:33:04.631Z",
+      updatedAt: "2026-07-30T15:33:04.631Z",
+      active: true,
+      quarantined: false,
+      cloudStorage: false,
+    };
+
+    function mockBlockUploads(times = 1) {
+      nock(BASE_URL)
+        .post(
+          `/api/v2/blocks/sidedrawer/sidedrawer-id/test/records/record-id/test/upload`
+        )
+        .query((actualQueryObject) => actualQueryObject.order != null)
+        .times(times)
+        .reply(200, (urlString) => {
+          const url = new URL(`${BASE_URL}${urlString}`);
+          const order: any = url.searchParams.get("order");
+
+          return {
+            hash: `hash-${order}`,
+            order: parseInt(order),
+          };
+        });
+    }
+
+    it("uploads via sidedrawer-scoped finalize", (done) => {
+      expect.assertions(7);
+
+      const file = generateBlob(1024);
+
+      mockBlockUploads(1);
+
+      nock(BASE_URL)
+        .post(
+          `/api/v1/smart-forms-request/sidedrawer/sidedrawer-id/test/smart-forms-request/smart-form-request-id/sfr-1/items/item-id/item-1/record-files`,
+          (body: any) => {
+            expect(Array.isArray(body.blocks)).toBe(true);
+            expect(body.blocks[0]).toEqual(
+              expect.objectContaining({
+                hash: expect.any(String),
+                order: expect.any(Number),
+              })
+            );
+            expect(typeof body.blocks).not.toBe("string");
+            expect(body.recordId).toBe("test");
+            return true;
+          }
+        )
+        .query((q) => q.fileName != null && q.checkSum != null)
+        .reply(201, () => sfrResponse);
+
+      const progressValues: number[] = [];
+      const progressSubscriber$ = new Subject<number>();
+      progressSubscriber$.subscribe((p) => progressValues.push(p));
+
+      sd.files
+        .uploadToSmartFormRequest({
+          sidedrawerId: "test",
+          smartFormRequestId: "sfr-1",
+          smartFormItemId: "item-1",
+          recordId: "test",
+          file,
+          fileName: "test.pdf",
+          uploadTitle: "Test",
+          fileType: "document",
+          progressSubscriber$,
+        })
+        .subscribe({
+          next: (result) => {
+            expect(result._id).toBe("sfr-file-1");
+            expect(result.fileToken).toBe("token-1");
+            expect(progressValues.length).toBeGreaterThan(0);
+          },
+          complete: () => done(),
+          error: (e) => {
+            console.log("uploadToSmartFormRequest sidedrawer", e);
+            done(e);
+          },
+        });
+    }, 10000);
+
+    it("uploads via admin-scoped finalize when smartFormId is set", (done) => {
+      expect.assertions(2);
+
+      const file = generateBlob(1024);
+
+      // Blocks still need sidedrawerId
+      mockBlockUploads(1);
+
+      nock(BASE_URL)
+        .post(
+          `/api/v1/smart-forms/sf-1/smart-forms-request/sfr-1/items/item-1/record-files`
+        )
+        .query((q) => q.fileName != null && q.checkSum != null)
+        .reply(201, () => sfrResponse);
+
+      sd.files
+        .uploadToSmartFormRequest({
+          smartFormId: "sf-1",
+          sidedrawerId: "test",
+          smartFormRequestId: "sfr-1",
+          smartFormItemId: "item-1",
+          recordId: "test",
+          file,
+          fileName: "test.pdf",
+          uploadTitle: "Test",
+          fileType: "document",
+        })
+        .subscribe({
+          next: (result) => {
+            expect(result).not.toBe(undefined);
+            expect(result._id).toBe("sfr-file-1");
+          },
+          complete: () => done(),
+          error: (e) => {
+            console.log("uploadToSmartFormRequest admin", e);
+            done(e);
+          },
+        });
+    }, 10000);
+
+    it("retries transient block 5xx failures", (done) => {
+      expect.assertions(1);
+
+      const file = generateBlob(1024);
+
+      nock(BASE_URL)
+        .post(
+          `/api/v2/blocks/sidedrawer/sidedrawer-id/test/records/record-id/test/upload`
+        )
+        .query((q) => q.order != null)
+        .reply(503, {});
+
+      nock(BASE_URL)
+        .post(
+          `/api/v2/blocks/sidedrawer/sidedrawer-id/test/records/record-id/test/upload`
+        )
+        .query((q) => q.order != null)
+        .reply(200, (urlString) => {
+          const url = new URL(`${BASE_URL}${urlString}`);
+          const order: any = url.searchParams.get("order");
+
+          return {
+            hash: `hash-${order}`,
+            order: parseInt(order),
+          };
+        });
+
+      nock(BASE_URL)
+        .post(
+          `/api/v1/smart-forms-request/sidedrawer/sidedrawer-id/test/smart-forms-request/smart-form-request-id/sfr-1/items/item-id/item-1/record-files`
+        )
+        .query(() => true)
+        .reply(201, () => sfrResponse);
+
+      sd.files
+        .uploadToSmartFormRequest({
+          sidedrawerId: "test",
+          smartFormRequestId: "sfr-1",
+          smartFormItemId: "item-1",
+          recordId: "test",
+          file,
+          fileName: "test.pdf",
+          uploadTitle: "Test",
+          fileType: "document",
+          maxRetries: 2,
+        })
+        .subscribe({
+          next: (result) => {
+            expect(result._id).toBe("sfr-file-1");
+          },
+          complete: () => done(),
+          error: (e) => done(e),
+        });
+    }, 10000);
+
+    it("aborts mid-upload", (done) => {
+      expect.assertions(2);
+
+      const file = generateBlob(4 * 1024 * 1024 * 2);
+
+      nock(BASE_URL)
+        .post(
+          `/api/v2/blocks/sidedrawer/sidedrawer-id/test/records/record-id/test/upload`
+        )
+        .query(() => true)
+        .delayConnection(1000)
+        .times(2)
+        .reply(204);
+
+      const controller = new AbortController();
+
+      sd.files
+        .uploadToSmartFormRequest({
+          sidedrawerId: "test",
+          smartFormRequestId: "sfr-1",
+          smartFormItemId: "item-1",
+          recordId: "test",
+          file,
+          fileName: "test.pdf",
+          uploadTitle: "Test",
+          fileType: "document",
+          signal: controller.signal,
+        })
+        .subscribe({
+          error: (err: Error) => {
+            expect(err).not.toBe(undefined);
+            expect(err.message).toMatch(/canceled|cancelled|close|abort/i);
+            done();
+          },
+        });
+
+      setTimeout(() => {
+        controller.abort();
+      }, 100);
+    }, 5000);
+
+    it("fails when required params are missing", () => {
+      const file = generateBlob(1024);
+
+      const params = {
+        sidedrawerId: "test",
+        smartFormRequestId: "sfr-1",
+        smartFormItemId: "item-1",
+        recordId: "test",
+        file,
+        fileName: "test.pdf",
+        uploadTitle: "Test",
+        fileType: "document" as const,
+      };
+
+      const requiredParams = [
+        "smartFormRequestId",
+        "smartFormItemId",
+        "recordId",
+        "file",
+        "fileName",
+        "uploadTitle",
+        "fileType",
+      ];
+
+      expect.assertions(requiredParams.length * 3 + 3);
+
+      for (const param of requiredParams) {
+        try {
+          sd.files.uploadToSmartFormRequest({
+            ...params,
+            [param]: undefined,
+          } as any);
+        } catch (err: any) {
+          expect(err).not.toBe(undefined);
+          expect(err.message).toContain("required");
+          expect(err.message).toContain(param);
+        }
+      }
+
+      try {
+        sd.files.uploadToSmartFormRequest({
+          ...params,
+          sidedrawerId: undefined,
+          smartFormId: undefined,
+        } as any);
+      } catch (err: any) {
+        expect(err).not.toBe(undefined);
+        expect(err.message).toContain("required");
+        expect(err.message).toMatch(/sidedrawerId or smartFormId/);
+      }
+    });
+  });
+
   it("Files.download fail required params", () => {
     const params = {
       sidedrawerId: "test",

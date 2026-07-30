@@ -16,7 +16,12 @@ import HttpService from "../core/HttpService";
 import { HttpServiceError } from "../core/HttpServiceError";
 import { ExternalKeys, Metadata } from "../types/base";
 import { Abortable, ObservablePromise } from "../types/core";
-import { RecordFileDetail, RecordFileQueryParams } from "../types/files";
+import {
+  RecordFileDetail,
+  RecordFileQueryParams,
+  SmartFormRequestFileResponse,
+  SmartFormRequestUploadParams,
+} from "../types/files";
 import { isBrowserEnvironment, isRequired } from "../utils/core";
 import { generateHash } from "../utils/crypto";
 import { SdkProgressEvent } from "../core/types/HttpRequestConfig";
@@ -40,6 +45,20 @@ interface UploadProcessBlock {
   size: number;
   checksum: string;
 }
+
+interface FinalizeUploadContext {
+  blocks: UploadProcessBlock[];
+  record: RecordFileQueryParams;
+  metadata?: Metadata;
+  externalKeys?: ExternalKeys;
+  checksum: string;
+  sidedrawerId: string;
+  recordId: string;
+}
+
+type FinalizeUpload<T> = (
+  context: FinalizeUploadContext
+) => ObservablePromise<T>;
 
 export interface FileUploadOptions extends Abortable {
   maxRetries: number;
@@ -232,17 +251,19 @@ class UploadProcess {
     this.progressSubscriber$.next(uploadedPercentage);
   }
 
-  public upload({
+  public uploadWithFinalize<T>({
     record,
     metadata,
     externalKeys,
     options,
+    finalize,
   }: {
     record: RecordFileQueryParams;
     metadata?: Metadata;
     externalKeys?: ExternalKeys;
     options: FileUploadOptions;
-  }): ObservablePromise<RecordFileDetail> {
+    finalize: FinalizeUpload<T>;
+  }): ObservablePromise<T> {
     this.emitUploadProgress();
 
     return this.emitBlocks().pipe(
@@ -257,67 +278,116 @@ class UploadProcess {
 
         return from(this.getFileChecksum()).pipe(
           mergeMap((checksum) => {
-            return this.createRecordFile({
+            return finalize({
               blocks,
               record,
               metadata,
               externalKeys,
               checksum,
+              sidedrawerId: this.sidedrawerId,
+              recordId: this.recordId,
             });
           })
         );
       })
     );
   }
+}
 
-  private createRecordFile({
-    blocks,
-    record,
-    metadata,
-    externalKeys,
-    checksum,
-  }: {
-    blocks: UploadProcessBlock[];
-    record: RecordFileQueryParams;
-    metadata?: Metadata;
-    externalKeys?: ExternalKeys;
-    checksum: string;
-  }): ObservablePromise<RecordFileDetail> {
-    const blocksJSON: string = JSON.stringify(
-      blocks.map(({ hash, order }) => {
-        return {
-          hash,
-          order,
-        };
-      })
-    );
+function mapUploadBlocks(
+  blocks: UploadProcessBlock[]
+): { hash?: string; order: number }[] {
+  return blocks.map(({ hash, order }) => {
+    return {
+      hash,
+      order,
+    };
+  });
+}
 
-    let metadataJSON: string | undefined;
-    let externalKeysJSON: string | undefined;
+/** Classic record-files finalize expects nested fields as JSON strings. */
+function buildFinalizeBody({
+  blocks,
+  metadata,
+  externalKeys,
+}: {
+  blocks: UploadProcessBlock[];
+  metadata?: Metadata;
+  externalKeys?: ExternalKeys;
+}): {
+  metadata?: string;
+  externalKeys?: string;
+  blocks: string;
+} {
+  let metadataJSON: string | undefined;
+  let externalKeysJSON: string | undefined;
 
-    if (metadata != null) {
-      metadataJSON = JSON.stringify(metadata);
-    }
-
-    if (externalKeys != null) {
-      externalKeysJSON = JSON.stringify(externalKeys);
-    }
-
-    return this.httpService.post<RecordFileDetail>(
-      `/api/v2/record-files/sidedrawer/sidedrawer-id/${this.sidedrawerId}/records/record-id/${this.recordId}/record-files`,
-      {
-        metadata: metadataJSON,
-        externalKeys: externalKeysJSON,
-        blocks: blocksJSON,
-      },
-      {
-        params: {
-          ...record,
-          checkSum: checksum,
-        },
-      }
-    );
+  if (metadata != null) {
+    metadataJSON = JSON.stringify(metadata);
   }
+
+  if (externalKeys != null) {
+    externalKeysJSON = JSON.stringify(externalKeys);
+  }
+
+  return {
+    metadata: metadataJSON,
+    externalKeys: externalKeysJSON,
+    blocks: JSON.stringify(mapUploadBlocks(blocks)),
+  };
+}
+
+/**
+ * SFR finalize expects real JSON objects/arrays (not stringified nested JSON).
+ * UAT rejects string `blocks` with: "must be either object or array".
+ */
+function buildSmartFormRequestFinalizeBody({
+  blocks,
+  metadata,
+  externalKeys,
+  recordId,
+}: {
+  blocks: UploadProcessBlock[];
+  metadata?: Metadata;
+  externalKeys?: ExternalKeys;
+  recordId: string;
+}): {
+  metadata?: Metadata;
+  externalKeys?: ExternalKeys;
+  blocks: { hash?: string; order: number }[];
+  recordId: string;
+} {
+  return {
+    recordId,
+    blocks: mapUploadBlocks(blocks),
+    ...(metadata != null ? { metadata } : {}),
+    ...(externalKeys != null ? { externalKeys } : {}),
+  };
+}
+
+function buildSmartFormRequestFinalizeUrl({
+  sidedrawerId,
+  smartFormId,
+  smartFormRequestId,
+  smartFormItemId,
+}: {
+  sidedrawerId?: string;
+  smartFormId?: string;
+  smartFormRequestId: string;
+  smartFormItemId: string;
+}): string {
+  // Prefer admin finalize when smartFormId is present so console flows can
+  // still pass sidedrawerId for the blocks API without hitting the
+  // sidedrawer-scoped finalize endpoint.
+  if (smartFormId) {
+    return `/api/v1/smart-forms/${smartFormId}/smart-forms-request/${smartFormRequestId}/items/${smartFormItemId}/record-files`;
+  }
+
+  if (sidedrawerId) {
+    return `/api/v1/smart-forms-request/sidedrawer/sidedrawer-id/${sidedrawerId}/smart-forms-request/smart-form-request-id/${smartFormRequestId}/items/item-id/${smartFormItemId}/record-files`;
+  }
+
+  return isRequired("sidedrawerId or smartFormId");
 }
 
 const DEFAULT_FILE_UPLOAD_OPTIONS = {
@@ -373,7 +443,7 @@ export default class Files {
       optionsWithDefaults
     );
 
-    return uploadProcess.upload({
+    return uploadProcess.uploadWithFinalize<RecordFileDetail>({
       record: {
         fileName,
         uploadTitle,
@@ -386,6 +456,133 @@ export default class Files {
       metadata,
       externalKeys,
       options: optionsWithDefaults,
+      finalize: ({
+        blocks,
+        record,
+        metadata: finalizeMetadata,
+        externalKeys: finalizeExternalKeys,
+        checksum,
+        sidedrawerId: finalizeSidedrawerId,
+        recordId: finalizeRecordId,
+      }) => {
+        return this.context.http.post<RecordFileDetail>(
+          `/api/v2/record-files/sidedrawer/sidedrawer-id/${finalizeSidedrawerId}/records/record-id/${finalizeRecordId}/record-files`,
+          buildFinalizeBody({
+            blocks,
+            metadata: finalizeMetadata,
+            externalKeys: finalizeExternalKeys,
+          }),
+          {
+            params: {
+              ...record,
+              checkSum: checksum,
+            },
+          }
+        );
+      },
+    });
+  }
+
+  /**
+   * Upload file to a Smart Forms Request item.
+   *
+   * Finalize routes by params:
+   * - `smartFormId` present → admin-scoped SFR endpoint
+   * - else `sidedrawerId` → sidedrawer-scoped SFR endpoint
+   *
+   * Block upload always uses the sidedrawer blocks API, so `sidedrawerId` is
+   * required for the block step (admin callers should pass both IDs).
+   */
+  public uploadToSmartFormRequest(
+    params: SmartFormRequestUploadParams & Partial<FileUploadOptions>
+  ): ObservablePromise<SmartFormRequestFileResponse> {
+    const {
+      smartFormRequestId = isRequired("smartFormRequestId"),
+      smartFormItemId = isRequired("smartFormItemId"),
+      recordId = isRequired("recordId"),
+      file = isRequired("file"),
+      fileName = isRequired("fileName"),
+      uploadTitle = isRequired("uploadTitle"),
+      fileType = isRequired("fileType"),
+      sidedrawerId,
+      smartFormId,
+      displayType,
+      envelopeId,
+      correlationId,
+      fileExtension,
+      metadata,
+      externalKeys,
+      ...options
+    } = params;
+
+    if (sidedrawerId == null && smartFormId == null) {
+      return isRequired("sidedrawerId or smartFormId");
+    }
+
+    // Blocks API is sidedrawer-scoped; admin finalize still needs sidedrawerId
+    // for the block-upload step.
+    const blockSidedrawerId =
+      sidedrawerId ?? isRequired("sidedrawerId");
+
+    const optionsWithDefaults = {
+      ...DEFAULT_FILE_UPLOAD_OPTIONS,
+      ...options,
+    } satisfies FileUploadOptions;
+
+    const finalizeUrl = buildSmartFormRequestFinalizeUrl({
+      sidedrawerId,
+      smartFormId,
+      smartFormRequestId,
+      smartFormItemId,
+    });
+
+    const uploadProcess = new UploadProcess(
+      {
+        httpService: this.context.http,
+        sidedrawerId: blockSidedrawerId,
+        recordId,
+        file,
+      },
+      optionsWithDefaults
+    );
+
+    return uploadProcess.uploadWithFinalize<SmartFormRequestFileResponse>({
+      record: {
+        fileName,
+        uploadTitle,
+        fileType,
+        displayType,
+        envelopeId,
+        correlationId,
+        fileExtension,
+      },
+      metadata,
+      externalKeys,
+      options: optionsWithDefaults,
+      finalize: ({
+        blocks,
+        record,
+        metadata: finalizeMetadata,
+        externalKeys: finalizeExternalKeys,
+        checksum,
+        recordId: finalizeRecordId,
+      }) => {
+        return this.context.http.post<SmartFormRequestFileResponse>(
+          finalizeUrl,
+          buildSmartFormRequestFinalizeBody({
+            blocks,
+            metadata: finalizeMetadata,
+            externalKeys: finalizeExternalKeys,
+            recordId: finalizeRecordId,
+          }),
+          {
+            params: {
+              ...record,
+              checkSum: checksum,
+            },
+          }
+        );
+      },
     });
   }
 
