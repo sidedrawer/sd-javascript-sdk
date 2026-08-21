@@ -29,8 +29,10 @@ import { SdkProgressEvent } from "../core/types/HttpRequestConfig";
 interface UploadProcessParams {
   httpService: HttpService;
   file: File | Blob;
-  sidedrawerId: string;
-  recordId: string;
+  sidedrawerId?: string;
+  recordId?: string;
+  /** SFR-only. Classic `upload()` uses the record-id blocks path. */
+  blockUploadUrl?: string;
 }
 
 type UploadResponse = {
@@ -52,8 +54,8 @@ interface FinalizeUploadContext {
   metadata?: Metadata;
   externalKeys?: ExternalKeys;
   checksum: string;
-  sidedrawerId: string;
-  recordId: string;
+  sidedrawerId?: string;
+  recordId?: string;
 }
 
 type FinalizeUpload<T> = (
@@ -108,8 +110,9 @@ interface FileStreamRedirectResponse {
 }
 
 class UploadProcess {
-  private sidedrawerId: string;
-  private recordId: string;
+  private sidedrawerId?: string;
+  private recordId?: string;
+  private blockUploadUrl?: string;
   private httpService: HttpService;
   private file: File | Blob;
 
@@ -121,13 +124,20 @@ class UploadProcess {
   private maxChunkSizeBytes: number;
 
   constructor(
-    { httpService, file, sidedrawerId, recordId }: UploadProcessParams,
+    {
+      httpService,
+      file,
+      sidedrawerId,
+      recordId,
+      blockUploadUrl,
+    }: UploadProcessParams,
     { progressSubscriber$, maxChunkSizeBytes }: FileUploadOptions
   ) {
     this.httpService = httpService;
     this.file = file;
     this.sidedrawerId = sidedrawerId;
     this.recordId = recordId;
+    this.blockUploadUrl = blockUploadUrl;
     this.uploadedBytesByBlockOrder = {};
     this.progressSubscriber$ = progressSubscriber$;
     this.maxChunkSizeBytes = maxChunkSizeBytes;
@@ -187,7 +197,7 @@ class UploadProcess {
     uploadProcessBlock: UploadProcessBlock,
     signal?: AbortSignal
   ): ObservablePromise<UploadProcessBlock> {
-    const { sidedrawerId, recordId, uploadedBytesByBlockOrder } = this;
+    const { uploadedBytesByBlockOrder } = this;
 
     uploadedBytesByBlockOrder[uploadProcessBlock.order] = 0;
 
@@ -206,9 +216,13 @@ class UploadProcess {
     const formData = new FormData();
     formData.append("block", new Blob([uploadProcessBlock.block]));
 
+    const blockUploadUrl =
+      this.blockUploadUrl ??
+      `/api/v2/blocks/sidedrawer/sidedrawer-id/${this.sidedrawerId}/records/record-id/${this.recordId}/upload`;
+
     return this.httpService
       .post<UploadResponse>(
-        `/api/v2/blocks/sidedrawer/sidedrawer-id/${sidedrawerId}/records/record-id/${recordId}/upload`,
+        blockUploadUrl,
         formData,
         {
           params: {
@@ -305,6 +319,21 @@ function mapUploadBlocks(
   });
 }
 
+function buildRecordBlockUploadUrl(
+  sidedrawerId: string,
+  recordId: string
+): string {
+  return `/api/v2/blocks/sidedrawer/sidedrawer-id/${sidedrawerId}/records/record-id/${recordId}/upload`;
+}
+
+function buildSmartFormBlockUploadUrl(
+  smartFormId: string,
+  smartFormRequestId: string,
+  smartFormItemId: string
+): string {
+  return `/api/v1/blocks/smart-forms/${smartFormId}/smart-forms-request/${smartFormRequestId}/items/${smartFormItemId}/upload`;
+}
+
 /** Classic record-files finalize expects nested fields as JSON strings. */
 function buildFinalizeBody({
   blocks,
@@ -350,16 +379,16 @@ function buildSmartFormRequestFinalizeBody({
   blocks: UploadProcessBlock[];
   metadata?: Metadata;
   externalKeys?: ExternalKeys;
-  recordId: string;
+  recordId?: string;
 }): {
   metadata?: Metadata;
   externalKeys?: ExternalKeys;
   blocks: { hash?: string; order: number }[];
-  recordId: string;
+  recordId?: string;
 } {
   return {
-    recordId,
     blocks: mapUploadBlocks(blocks),
+    ...(recordId != null ? { recordId } : {}),
     ...(metadata != null ? { metadata } : {}),
     ...(externalKeys != null ? { externalKeys } : {}),
   };
@@ -490,8 +519,10 @@ export default class Files {
    * - `smartFormId` present → admin-scoped SFR endpoint
    * - else `sidedrawerId` → sidedrawer-scoped SFR endpoint
    *
-   * Block upload always uses the sidedrawer blocks API, so `sidedrawerId` is
-   * required for the block step (admin callers should pass both IDs).
+   * Block upload:
+   * - `recordId` present → sidedrawer record blocks API (`sidedrawerId` required)
+   * - else → smart-form item blocks API (`smartFormId` required)
+   * `recordId` is optional on the SFR finalize body.
    */
   public uploadToSmartFormRequest(
     params: SmartFormRequestUploadParams & Partial<FileUploadOptions>
@@ -499,11 +530,11 @@ export default class Files {
     const {
       smartFormRequestId = isRequired("smartFormRequestId"),
       smartFormItemId = isRequired("smartFormItemId"),
-      recordId = isRequired("recordId"),
       file = isRequired("file"),
       fileName = isRequired("fileName"),
       uploadTitle = isRequired("uploadTitle"),
       fileType = isRequired("fileType"),
+      recordId,
       sidedrawerId,
       smartFormId,
       displayType,
@@ -519,10 +550,9 @@ export default class Files {
       return isRequired("sidedrawerId or smartFormId");
     }
 
-    // Blocks API is sidedrawer-scoped; admin finalize still needs sidedrawerId
-    // for the block-upload step.
-    const blockSidedrawerId =
-      sidedrawerId ?? isRequired("sidedrawerId");
+    if (recordId == null && smartFormId == null) {
+      return isRequired("recordId or smartFormId");
+    }
 
     const optionsWithDefaults = {
       ...DEFAULT_FILE_UPLOAD_OPTIONS,
@@ -536,12 +566,24 @@ export default class Files {
       smartFormItemId,
     });
 
+    const blockUploadUrl = recordId
+      ? buildRecordBlockUploadUrl(
+          sidedrawerId ?? isRequired("sidedrawerId"),
+          recordId
+        )
+      : buildSmartFormBlockUploadUrl(
+          smartFormId ?? isRequired("smartFormId"),
+          smartFormRequestId,
+          smartFormItemId
+        );
+
     const uploadProcess = new UploadProcess(
       {
         httpService: this.context.http,
-        sidedrawerId: blockSidedrawerId,
+        sidedrawerId,
         recordId,
         file,
+        blockUploadUrl,
       },
       optionsWithDefaults
     );

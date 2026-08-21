@@ -44,14 +44,15 @@ export interface RecordFileQueryParams {
  * Params for uploading a file to a Smart Forms Request item.
  *
  * Provide `sidedrawerId` for end-user (sidedrawer-scoped) finalize, or
- * `smartFormId` for admin finalize. Block upload always needs `sidedrawerId`,
- * so admin callers should pass both `smartFormId` and `sidedrawerId`.
- * When `smartFormId` is set, finalize uses the admin-scoped endpoint.
+ * `smartFormId` for admin finalize.
+ * `recordId` is optional. When omitted, block upload uses the admin SFR
+ * blocks API and requires `smartFormId`. When present, blocks use the
+ * sidedrawer record-id upload path (`sidedrawerId` required).
  */
 export interface SmartFormRequestUploadParams extends RecordFileQueryParams {
   smartFormRequestId: string;
   smartFormItemId: string;
-  recordId: string;
+  recordId?: string;
   file: File | Blob;
   sidedrawerId?: string;
   smartFormId?: string;

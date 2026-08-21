@@ -648,6 +648,58 @@ describe("Files", () => {
       }, 100);
     }, 5000);
 
+    it("uploads without recordId using admin SFR block upload", (done) => {
+      expect.assertions(4);
+
+      const file = generateBlob(1024);
+
+      nock(BASE_URL)
+        .post(
+          `/api/v1/blocks/smart-forms/sf-1/smart-forms-request/sfr-1/items/item-1/upload`
+        )
+        .query((actualQueryObject) => actualQueryObject.order != null)
+        .reply(200, (urlString) => {
+          const url = new URL(`${BASE_URL}${urlString}`);
+          const order: any = url.searchParams.get("order");
+
+          return {
+            hash: `hash-${order}`,
+            order: parseInt(order),
+          };
+        });
+
+      nock(BASE_URL)
+        .post(
+          `/api/v1/smart-forms/sf-1/smart-forms-request/sfr-1/items/item-1/record-files`,
+          (body: any) => {
+            expect(Array.isArray(body.blocks)).toBe(true);
+            expect(body.recordId).toBeUndefined();
+            return true;
+          }
+        )
+        .query((q) => q.fileName != null && q.checkSum != null)
+        .reply(201, () => sfrResponse);
+
+      sd.files
+        .uploadToSmartFormRequest({
+          smartFormId: "sf-1",
+          smartFormRequestId: "sfr-1",
+          smartFormItemId: "item-1",
+          file,
+          fileName: "test.pdf",
+          uploadTitle: "Test",
+          fileType: "document",
+        })
+        .subscribe({
+          next: (result) => {
+            expect(result).not.toBe(undefined);
+            expect(result._id).toBe("sfr-file-1");
+          },
+          complete: () => done(),
+          error: (e) => done(e),
+        });
+    }, 10000);
+
     it("fails when required params are missing", () => {
       const file = generateBlob(1024);
 
@@ -665,14 +717,13 @@ describe("Files", () => {
       const requiredParams = [
         "smartFormRequestId",
         "smartFormItemId",
-        "recordId",
         "file",
         "fileName",
         "uploadTitle",
         "fileType",
       ];
 
-      expect.assertions(requiredParams.length * 3 + 3);
+      expect.assertions(requiredParams.length * 3 + 6);
 
       for (const param of requiredParams) {
         try {
@@ -697,6 +748,18 @@ describe("Files", () => {
         expect(err).not.toBe(undefined);
         expect(err.message).toContain("required");
         expect(err.message).toMatch(/sidedrawerId or smartFormId/);
+      }
+
+      try {
+        sd.files.uploadToSmartFormRequest({
+          ...params,
+          recordId: undefined,
+          smartFormId: undefined,
+        } as any);
+      } catch (err: any) {
+        expect(err).not.toBe(undefined);
+        expect(err.message).toContain("required");
+        expect(err.message).toMatch(/recordId or smartFormId/);
       }
     });
   });
