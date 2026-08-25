@@ -512,17 +512,34 @@ describe("Files", () => {
         });
     }, 10000);
 
-    it("uploads via admin-scoped finalize when smartFormId is set", (done) => {
-      expect.assertions(2);
+    it("uploads via SFR blocks + admin finalize when smartFormId is set with optional recordId", (done) => {
+      expect.assertions(4);
 
       const file = generateBlob(1024);
 
-      // Blocks still need sidedrawerId
-      mockBlockUploads(1);
+      nock(BASE_URL)
+        .post(
+          `/api/v1/blocks/smart-forms/sf-1/smart-forms-request/sfr-1/items/item-1/upload`
+        )
+        .query((actualQueryObject) => actualQueryObject.order != null)
+        .reply(200, (urlString) => {
+          const url = new URL(`${BASE_URL}${urlString}`);
+          const order: any = url.searchParams.get("order");
+
+          return {
+            hash: `hash-${order}`,
+            order: parseInt(order),
+          };
+        });
 
       nock(BASE_URL)
         .post(
-          `/api/v1/smart-forms/sf-1/smart-forms-request/sfr-1/items/item-1/record-files`
+          `/api/v1/smart-forms/sf-1/smart-forms-request/sfr-1/items/item-1/record-files`,
+          (body: any) => {
+            expect(Array.isArray(body.blocks)).toBe(true);
+            expect(body.recordId).toBe("test");
+            return true;
+          }
         )
         .query((q) => q.fileName != null && q.checkSum != null)
         .reply(201, () => sfrResponse);
@@ -530,7 +547,6 @@ describe("Files", () => {
       sd.files
         .uploadToSmartFormRequest({
           smartFormId: "sf-1",
-          sidedrawerId: "test",
           smartFormRequestId: "sfr-1",
           smartFormItemId: "item-1",
           recordId: "test",

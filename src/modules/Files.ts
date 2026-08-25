@@ -515,14 +515,17 @@ export default class Files {
   /**
    * Upload file to a Smart Forms Request item.
    *
-   * Finalize routes by params:
-   * - `smartFormId` present → admin-scoped SFR endpoint
-   * - else `sidedrawerId` → sidedrawer-scoped SFR endpoint
+   * Prefer this over `upload()` for SFR item files. Classic record uploads
+   * stay on `upload()`.
    *
-   * Block upload:
-   * - `recordId` present → sidedrawer record blocks API (`sidedrawerId` required)
-   * - else → smart-form item blocks API (`smartFormId` required)
-   * `recordId` is optional on the SFR finalize body.
+   * When `smartFormId` is set (SFR / new endpoints):
+   * - Blocks always use the smart-form item upload API
+   * - Finalize uses the admin-scoped SFR `record-files` API
+   * - `recordId` is optional and only forwarded on the finalize body
+   *
+   * Legacy end-user path (no `smartFormId`):
+   * - Requires `sidedrawerId` + `recordId`
+   * - Blocks use sidedrawer record upload; finalize is sidedrawer-scoped SFR
    */
   public uploadToSmartFormRequest(
     params: SmartFormRequestUploadParams & Partial<FileUploadOptions>
@@ -550,7 +553,8 @@ export default class Files {
       return isRequired("sidedrawerId or smartFormId");
     }
 
-    if (recordId == null && smartFormId == null) {
+    // Legacy sidedrawer path still needs recordId for record-scoped blocks.
+    if (smartFormId == null && recordId == null) {
       return isRequired("recordId or smartFormId");
     }
 
@@ -566,15 +570,16 @@ export default class Files {
       smartFormItemId,
     });
 
-    const blockUploadUrl = recordId
-      ? buildRecordBlockUploadUrl(
-          sidedrawerId ?? isRequired("sidedrawerId"),
-          recordId
-        )
-      : buildSmartFormBlockUploadUrl(
-          smartFormId ?? isRequired("smartFormId"),
+    // With smartFormId, always use SFR blocks — recordId does not switch paths.
+    const blockUploadUrl = smartFormId
+      ? buildSmartFormBlockUploadUrl(
+          smartFormId,
           smartFormRequestId,
           smartFormItemId
+        )
+      : buildRecordBlockUploadUrl(
+          sidedrawerId ?? isRequired("sidedrawerId"),
+          recordId ?? isRequired("recordId")
         );
 
     const uploadProcess = new UploadProcess(

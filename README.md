@@ -112,12 +112,13 @@ progressSubscriber$.subscribe((progressPercentage: number) => {
     console.log(`Upload progress: ${progressPercentage}`);
 });
 
-// End-user / sidedrawer-scoped (e.g. my-web) — recordId required for block upload
+// Smart Form item upload (new endpoints). recordId is optional — when set it
+// is only forwarded on finalize; blocks always use the SFR upload API.
 await sd.files.uploadToSmartFormRequest({
-  sidedrawerId: "...",
+  smartFormId: "...",
   smartFormRequestId: "...",
   smartFormItemId: "...",
-  recordId: "...",
+  // recordId: "...", // optional
   file,
   fileName: "...",
   uploadTitle: "...",
@@ -129,11 +130,12 @@ await sd.files.uploadToSmartFormRequest({
   maxConcurrency: 4,
 });
 
-// Admin-scoped (e.g. console) — omit recordId to use SFR item block upload
+// Legacy sidedrawer-scoped path (no smartFormId) — recordId required for blocks
 await sd.files.uploadToSmartFormRequest({
-  smartFormId: "...",
+  sidedrawerId: "...",
   smartFormRequestId: "...",
   smartFormItemId: "...",
+  recordId: "...",
   file,
   fileName: "...",
   uploadTitle: "...",
